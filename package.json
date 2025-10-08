@@ -1,0 +1,61 @@
+{
+  "name": "ainative-zerodb-mcp-server",
+  "version": "1.0.6",
+  "description": "AINative ZeroDB MCP Server - Vector search and persistent memory for AI agents",
+  "main": "index.js",
+  "bin": {
+    "ainative-zerodb-mcp": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "modelcontextprotocol",
+    "zerodb",
+    "ainative",
+    "vector-search",
+    "semantic-search",
+    "embeddings",
+    "rag",
+    "persistence",
+    "memory",
+    "agent-memory",
+    "database",
+    "postgresql",
+    "llm",
+    "ai",
+    "chatbot",
+    "claude",
+    "claude-desktop",
+    "claude-code",
+    "agent",
+    "typescript",
+    "local-first",
+    "context-window",
+    "conversation-history",
+    "knowledge-base",
+    "mcp-tools",
+    "windsurf"
+  ],
+  "author": "Toby Lopez <toby@rely.ventures>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AINative-Studio/ainative-zerodb-mcp-server.git"
+  },
+  "homepage": "https://github.com/AINative-Studio/ainative-zerodb-mcp-server#readme",
+  "bugs": {
+    "url": "https://github.com/AINative-Studio/ainative-zerodb-mcp-server/issues"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "axios": "^1.7.0",
+    "uuid": "^9.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
