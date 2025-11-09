@@ -6,7 +6,7 @@ const { CallToolRequestSchema, ListToolsRequestSchema } = require('@modelcontext
 const axios = require('axios')
 
 /**
- * ZeroDB MCP Server v2.0.5
+ * ZeroDB MCP Server v2.0.6
  *
  * Complete implementation with ALL 60 operations across 9 categories:
  * - Vector Operations (10): upsert, batch_upsert, search, delete, get, list, stats, create_index, optimize, export
@@ -39,7 +39,7 @@ class ZeroDBMCPServer {
     this.server = new Server(
       {
         name: 'zerodb-mcp',
-        version: '2.0.5'
+        version: '2.0.6'
       },
       {
         capabilities: {
@@ -1225,7 +1225,7 @@ class ZeroDBMCPServer {
 
       const transport = new StdioServerTransport()
       await this.server.connect(transport)
-      console.error('ZeroDB MCP Server v2.0.5 running on stdio')
+      console.error('ZeroDB MCP Server v2.0.6 running on stdio')
       console.error(`API URL: ${this.apiUrl}`)
       console.error(`Project ID: ${this.projectId}`)
       console.error('Operations: 60 (100% coverage)')
