@@ -1,4 +1,4 @@
-# ZeroDB MCP Server v2.0.6
+# ZeroDB MCP Server v2.0.7
 
 [![npm version](https://img.shields.io/npm/v/ainative-zerodb-mcp-server.svg)](https://www.npmjs.com/package/ainative-zerodb-mcp-server)
 [![npm downloads](https://img.shields.io/npm/dm/ainative-zerodb-mcp-server.svg)](https://www.npmjs.com/package/ainative-zerodb-mcp-server)
