@@ -1,6 +1,6 @@
 {
   "name": "ainative-zerodb-mcp-server",
-  "version": "2.0.7",
+  "version": "2.0.8",
   "description": "AINative ZeroDB MCP Server - 60 operations for vector search, quantum compression, NoSQL, files, events, RLHF, and persistent memory for AI agents with enterprise security. Production-ready MCP integration for Claude, Windsurf, and other AI assistants.",
   "main": "index.js",
   "type": "commonjs",
