@@ -2,6 +2,10 @@
 
 Vector search and persistent memory for AI agents using the Model Context Protocol (MCP).
 
+<a href="https://glama.ai/mcp/servers/@AINative-Studio/ainative-zerodb-mcp-server">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@AINative-Studio/ainative-zerodb-mcp-server/badge" alt="AINative ZeroDB Server MCP server" />
+</a>
+
 ## Features
 
 - 🧠 **Persistent Memory** - Store and retrieve agent memory across sessions
