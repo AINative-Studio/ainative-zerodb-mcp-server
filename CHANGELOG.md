@@ -5,6 +5,16 @@ All notable changes to the ZeroDB MCP Server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.8] - 2025-11-09
+
+### Fixed
+- Fixed version string consistency across all files (package.json, index.js, README.md)
+- Corrected MCP server constructor version to match package version
+- All version references now consistently show 2.0.8
+
+### Changed
+- Version bump to 2.0.8 due to NPM republish restrictions (v2.0.6 and v2.0.7 had inconsistent version strings)
+
 ## [2.0.5] - 2025-10-18
 
 ### Changed
