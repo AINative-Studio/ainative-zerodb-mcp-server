@@ -1,0 +1,55 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Testing
+coverage/
+__tests__/
+*.test.js
+.nyc_output/
+
+# Development
+.git/
+.gitignore
+.eslintrc.json
+.eslintignore
+.editorconfig
+.vscode/
+.idea/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Environment and secrets
+.env
+.env.*
+*.pem
+*.key
+*.cert
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.swp
+*~
+
+# Documentation (except what's needed)
+docs/
+
+# Build artifacts
+dist/
+build/
