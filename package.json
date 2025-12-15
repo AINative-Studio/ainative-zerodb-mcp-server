@@ -99,7 +99,8 @@
     "LICENSE",
     "SECURITY.md",
     "CHANGELOG.md",
-    "MIGRATION.md"
+    "MIGRATION.md",
+    "EMBEDDING_TOOLS_GUIDE.md"
   ],
   "publishConfig": {
     "access": "public",
