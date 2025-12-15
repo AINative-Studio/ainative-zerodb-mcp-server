@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "node index.js",
-    "test": "jest --coverage --coverageThreshold='{\"global\":{\"branches\":82,\"functions\":65,\"lines\":82,\"statements\":82}}' --forceExit",
+    "test": "jest --coverage --coverageThreshold='{\"global\":{\"branches\":90,\"functions\":71,\"lines\":81,\"statements\":80}}' --forceExit",
     "test:watch": "jest --watch",
     "test:ci": "jest --coverage --ci --maxWorkers=2",
     "lint": "eslint *.js __tests__/**/*.js",
