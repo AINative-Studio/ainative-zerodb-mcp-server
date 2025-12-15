@@ -1,24 +1,34 @@
-# ZeroDB MCP Server v2.0.8
+# ZeroDB MCP Server v2.2.0
 
 [![npm version](https://img.shields.io/npm/v/ainative-zerodb-mcp-server.svg)](https://www.npmjs.com/package/ainative-zerodb-mcp-server)
 [![npm downloads](https://img.shields.io/npm/dm/ainative-zerodb-mcp-server.svg)](https://www.npmjs.com/package/ainative-zerodb-mcp-server)
 [![license](https://img.shields.io/npm/l/ainative-zerodb-mcp-server.svg)](https://github.com/AINative-Studio/ainative-zerodb-mcp-server/blob/main/LICENSE)
-[![test coverage](https://img.shields.io/badge/coverage-90%25-brightgreen.svg)](https://github.com/AINative-Studio/ainative-zerodb-mcp-server)
+[![test coverage](https://img.shields.io/badge/coverage-81%25-brightgreen.svg)](https://github.com/AINative-Studio/ainative-zerodb-mcp-server)
 
-**Enterprise-grade Model Context Protocol (MCP) server providing full access to ZeroDB's vector search, quantum compression, NoSQL operations, and persistent memory for AI agents.**
+**Enterprise-grade Model Context Protocol (MCP) server providing full access to ZeroDB's vector search, quantum compression, PostgreSQL, NoSQL operations, and persistent memory for AI agents.**
+
+## 🆕 What's New in v2.2.0
+
+- **3 New Embedding Tools** - Free embedding generation with `zerodb_generate_embeddings`, `zerodb_embed_and_store`, `zerodb_semantic_search`
+- **Multi-Dimension Support** - Use 384, 768, 1024, or 1536 dimension vectors
+- **Free Models** - BAAI/bge-small/base/large-en-v1.5 (no API costs!)
+- **151 Tests Passing** - 80.76% coverage with comprehensive TDD test suite
+- **See [EMBEDDING_TOOLS_GUIDE.md](./EMBEDDING_TOOLS_GUIDE.md) for complete documentation**
 
 ## Key Features
 
-- **60 Complete Operations** - Full API coverage across all ZeroDB capabilities
-- **Vector Search** - Semantic similarity search with 1536-dimensional embeddings
+- **69 Complete Operations** - Full API coverage across all ZeroDB capabilities + new embedding tools
+- **Vector Search** - Semantic similarity search with 384/768/1024/1536-dimensional embeddings
+- **Free Embeddings** - Generate embeddings with BAAI BGE models (no OpenAI costs!)
 - **Quantum Compression** - Advanced vector compression using quantum algorithms
+- **PostgreSQL Operations** - Full SQL query execution, schema management, backups, and statistics
 - **NoSQL Tables** - Flexible table operations for structured data
 - **File Storage** - Secure file upload, download, and management
 - **Event System** - Event-driven architecture with pub/sub support
 - **Project Management** - Multi-tenant project isolation and management
 - **RLHF Integration** - Reinforcement Learning from Human Feedback collection
 - **Admin Tools** - System monitoring, optimization, and health checks
-- **Enterprise Security** - JWT authentication with automatic token renewal
+- **Enterprise Security** - JWT authentication with automatic token renewal + SQL injection prevention
 - **90%+ Test Coverage** - Comprehensive test suite for production reliability
 
 ---
@@ -37,6 +47,7 @@
   - [Project Operations (7)](#project-operations)
   - [RLHF Operations (10)](#rlhf-operations)
   - [Admin Operations (5)](#admin-operations)
+  - [PostgreSQL Operations (6)](#postgresql-operations)
 - [Configuration](#configuration)
 - [Examples](#examples)
 - [Migration Guide](#migration-guide)
@@ -1908,6 +1919,246 @@ Optimize database and storage (requires admin role).
 ```javascript
 {
   "optimization_type": "all"
+}
+```
+
+---
+
+### PostgreSQL Operations
+
+Dedicated PostgreSQL database operations for advanced SQL workloads.
+
+#### 61. `zerodb_postgres_query`
+Execute SQL query on your provisioned PostgreSQL instance with comprehensive security validations.
+
+**Parameters:**
+- `sql` (string, required) - SQL query to execute
+- `params` (array[string], optional) - Query parameters for prepared statements
+- `read_only` (boolean, optional) - Enforce read-only mode (SELECT only), default: false
+- `timeout_seconds` (number, optional) - Query timeout in seconds, default: 30
+- `max_rows` (number, optional) - Maximum rows to return, default: 1000
+
+**Returns:**
+```json
+{
+  "query_id": "q_abc123",
+  "query_type": "SELECT",
+  "rows_returned": 10,
+  "rows_affected": 0,
+  "execution_time_ms": 45.2,
+  "columns": ["id", "name", "email"],
+  "rows": [{"id": 1, "name": "User", "email": "user@example.com"}],
+  "success": true
+}
+```
+
+**Security Features:**
+- SQL injection prevention (blocks DROP DATABASE, TRUNCATE, etc.)
+- Query timeout enforcement
+- Read-only mode support
+- Parameter sanitization
+- Execution history tracking
+
+**Example:**
+```javascript
+{
+  "sql": "SELECT * FROM users WHERE created_at > $1 LIMIT 10",
+  "params": ["2025-01-01"],
+  "read_only": true,
+  "timeout_seconds": 30
+}
+```
+
+#### 62. `zerodb_postgres_schema_info`
+Get detailed database schema information including tables, columns, indexes, and constraints.
+
+**Parameters:**
+- `table_name` (string, optional) - Specific table to inspect (omit for all tables)
+- `include_indexes` (boolean, optional) - Include index information, default: true
+- `include_constraints` (boolean, optional) - Include constraint information, default: true
+- `include_stats` (boolean, optional) - Include table statistics, default: false
+
+**Returns:**
+```json
+{
+  "schema": "public",
+  "total_tables": 5,
+  "database_size_mb": 150.5,
+  "tables": [
+    {
+      "table_name": "users",
+      "columns": [
+        {"name": "id", "type": "INTEGER", "nullable": false, "primary_key": true},
+        {"name": "email", "type": "VARCHAR(255)", "nullable": false, "unique": true}
+      ],
+      "indexes": [
+        {"name": "users_pkey", "columns": ["id"], "unique": true},
+        {"name": "users_email_idx", "columns": ["email"], "unique": true}
+      ],
+      "row_count": 1000,
+      "size_mb": 25.5
+    }
+  ]
+}
+```
+
+**Example:**
+```javascript
+{
+  "table_name": "users",
+  "include_indexes": true,
+  "include_constraints": true
+}
+```
+
+#### 63. `zerodb_postgres_create_table`
+Create a new table with complete schema definition including columns, constraints, and indexes.
+
+**Parameters:**
+- `table_name` (string, required) - Name of the table to create
+- `columns` (array, required) - Column definitions
+  - `name` (string, required) - Column name
+  - `type` (string, required) - Column type (e.g., "VARCHAR(255)", "INTEGER", "TIMESTAMP")
+  - `nullable` (boolean, optional) - Allow NULL values, default: true
+  - `primary_key` (boolean, optional) - Is primary key, default: false
+  - `unique` (boolean, optional) - Unique constraint, default: false
+  - `default` (string, optional) - Default value
+- `indexes` (array, optional) - Index definitions
+  - `name` (string, optional) - Index name (auto-generated if not provided)
+  - `columns` (array[string], required) - Columns to index
+  - `unique` (boolean, optional) - Unique index, default: false
+- `if_not_exists` (boolean, optional) - Only create if table doesn't exist, default: true
+
+**Returns:**
+```json
+{
+  "table_name": "products",
+  "created": true,
+  "columns_count": 5,
+  "indexes_created": 2,
+  "indexes": [
+    {"index_name": "products_sku_idx", "success": true},
+    {"index_name": "products_name_idx", "success": true}
+  ]
+}
+```
+
+**Example:**
+```javascript
+{
+  "table_name": "products",
+  "columns": [
+    {"name": "id", "type": "SERIAL", "primary_key": true},
+    {"name": "sku", "type": "VARCHAR(50)", "nullable": false, "unique": true},
+    {"name": "name", "type": "VARCHAR(255)", "nullable": false},
+    {"name": "price", "type": "DECIMAL(10,2)", "nullable": false},
+    {"name": "created_at", "type": "TIMESTAMP", "default": "NOW()"}
+  ],
+  "indexes": [
+    {"columns": ["sku"], "unique": true},
+    {"columns": ["name"]}
+  ]
+}
+```
+
+#### 64. `zerodb_postgres_backup`
+Trigger a PostgreSQL backup job with configurable options.
+
+**Parameters:**
+- `backup_type` (string, optional) - "full" or "incremental", default: "full"
+- `retention_days` (number, optional) - Backup retention in days, default: 7
+- `compression` (boolean, optional) - Compress backup, default: true
+- `include_schema` (boolean, optional) - Include schema definition, default: true
+- `include_data` (boolean, optional) - Include table data, default: true
+
+**Returns:**
+```json
+{
+  "backup_id": "backup_xyz789",
+  "backup_type": "full",
+  "status": "initiated",
+  "estimated_size_mb": 250.0,
+  "retention_days": 7,
+  "created_at": "2025-12-07T18:00:00Z"
+}
+```
+
+**Example:**
+```javascript
+{
+  "backup_type": "full",
+  "retention_days": 30,
+  "compression": true
+}
+```
+
+#### 65. `zerodb_postgres_restore`
+Restore PostgreSQL database from a backup.
+
+**Parameters:**
+- `backup_id` (string, required) - Backup ID to restore from
+- `restore_type` (string, optional) - "full", "schema_only", or "data_only", default: "full"
+- `target_database` (string, optional) - Restore to different database name
+- `confirm_overwrite` (boolean, required) - Must be true to confirm overwrite of existing data
+
+**Returns:**
+```json
+{
+  "restore_id": "restore_abc123",
+  "backup_id": "backup_xyz789",
+  "status": "in_progress",
+  "estimated_time_minutes": 5,
+  "started_at": "2025-12-07T18:05:00Z"
+}
+```
+
+**Security:**
+- Requires explicit `confirm_overwrite: true` to prevent accidental data loss
+- Logs all restore operations for audit trail
+
+**Example:**
+```javascript
+{
+  "backup_id": "backup_xyz789",
+  "restore_type": "full",
+  "confirm_overwrite": true
+}
+```
+
+#### 66. `zerodb_postgres_stats`
+Get comprehensive PostgreSQL database statistics including performance metrics.
+
+**Parameters:**
+- `include_connections` (boolean, optional) - Include connection statistics, default: true
+- `include_queries` (boolean, optional) - Include query performance stats, default: true
+- `include_storage` (boolean, optional) - Include storage statistics, default: true
+- `include_replication` (boolean, optional) - Include replication stats, default: false
+- `time_range` (string, optional) - "hour", "day", "week", or "month", default: "day"
+
+**Returns:**
+```json
+{
+  "project_id": "proj_123",
+  "database_size_mb": 150.5,
+  "table_count": 25,
+  "active_connections": 5,
+  "max_connections": 100,
+  "queries_per_second": 120.5,
+  "cache_hit_ratio": 0.95,
+  "avg_query_time_ms": 15.2,
+  "cpu_usage_percent": 25.0,
+  "memory_usage_percent": 40.0,
+  "replication_lag_ms": null
+}
+```
+
+**Example:**
+```javascript
+{
+  "include_connections": true,
+  "include_queries": true,
+  "include_storage": true,
+  "time_range": "day"
 }
 ```
 

@@ -6,9 +6,9 @@ const { CallToolRequestSchema, ListToolsRequestSchema } = require('@modelcontext
 const axios = require('axios')
 
 /**
- * ZeroDB MCP Server v2.0.8
+ * ZeroDB MCP Server v2.2.0
  *
- * Complete implementation with ALL 60 operations across 9 categories:
+ * Complete implementation with ALL 69 operations across 10 categories (66 + 3 embedding tools):
  * - Vector Operations (10): upsert, batch_upsert, search, delete, get, list, stats, create_index, optimize, export
  * - Quantum Operations (6): compress, decompress, hybrid_similarity, optimize_space, feature_map, kernel_similarity
  * - Table Operations (8): create_table, list_tables, get_table, delete_table, insert_rows, query_rows, update_rows, delete_rows
@@ -18,6 +18,7 @@ const axios = require('axios')
  * - RLHF Operations (10): collect_interaction, agent_feedback, workflow_feedback, error_report, get_status, get_summary, start_collection, stop_collection, session_interactions, broadcast_event
  * - Memory Operations (3): store_memory, search_memory, get_context
  * - Admin Operations (5): system_stats, list_all_projects, user_usage, system_health, optimize_database
+ * - PostgreSQL Operations (6): query, schema_info, create_table, backup, restore, stats
  */
 
 class ZeroDBMCPServer {
@@ -39,7 +40,7 @@ class ZeroDBMCPServer {
     this.server = new Server(
       {
         name: 'zerodb-mcp',
-        version: '2.0.8'
+        version: '2.2.0'
       },
       {
         capabilities: {
@@ -53,10 +54,124 @@ class ZeroDBMCPServer {
     this.setupTokenRenewal()
   }
 
+  /**
+   * Validate vector dimensions - supports 384, 768, 1024, 1536
+   * @param {Array<number>} vector - Vector embedding array
+   * @returns {number} - Validated dimension count
+   * @throws {Error} - If dimension is not supported
+   */
+  validateVectorDimension (vector) {
+    const SUPPORTED_DIMENSIONS = [384, 768, 1024, 1536]
+
+    if (!vector || !Array.isArray(vector)) {
+      throw new Error('Vector must be a non-empty array')
+    }
+
+    const dim = vector.length
+
+    if (!SUPPORTED_DIMENSIONS.includes(dim)) {
+      throw new Error(`Unsupported dimension: ${dim}. Supported: ${SUPPORTED_DIMENSIONS.join(', ')}`)
+    }
+
+    return dim
+  }
+
   setupTools () {
-    // Define ALL 60 MCP tools for ZeroDB integration
+    // Define ALL 69 MCP tools for ZeroDB integration (updated from 66 with 3 new embedding tools)
     this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
       tools: [
+        // ==================== EMBEDDING OPERATIONS (3) ====================
+        {
+          name: 'zerodb_generate_embeddings',
+          description: 'Generate embeddings using specified model (384/768/1024 dimensions). Supports BAAI/bge-small-en-v1.5 (384-dim, default), BAAI/bge-base-en-v1.5 (768-dim), BAAI/bge-large-en-v1.5 (1024-dim)',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              texts: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Array of text strings to generate embeddings for'
+              },
+              model: {
+                type: 'string',
+                enum: ['BAAI/bge-small-en-v1.5', 'BAAI/bge-base-en-v1.5', 'BAAI/bge-large-en-v1.5'],
+                description: 'Embedding model to use',
+                default: 'BAAI/bge-small-en-v1.5'
+              }
+            },
+            required: ['texts']
+          }
+        },
+        {
+          name: 'zerodb_embed_and_store',
+          description: 'Generate embeddings and store in ZeroDB in one step. Auto-detects dimension based on model and routes to correct storage.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              texts: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Array of text strings to embed and store'
+              },
+              model: {
+                type: 'string',
+                enum: ['BAAI/bge-small-en-v1.5', 'BAAI/bge-base-en-v1.5', 'BAAI/bge-large-en-v1.5'],
+                description: 'Embedding model to use',
+                default: 'BAAI/bge-small-en-v1.5'
+              },
+              namespace: {
+                type: 'string',
+                description: 'Vector namespace for organization',
+                default: 'default'
+              },
+              metadata: {
+                type: 'object',
+                description: 'Optional metadata to attach to vectors'
+              }
+            },
+            required: ['texts']
+          }
+        },
+        {
+          name: 'zerodb_semantic_search',
+          description: 'Semantic search using text query (auto-embeds query text). Searches vectors in the same dimension as the model used.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              query_text: {
+                type: 'string',
+                description: 'Text query to search for (will be auto-embedded)'
+              },
+              model: {
+                type: 'string',
+                enum: ['BAAI/bge-small-en-v1.5', 'BAAI/bge-base-en-v1.5', 'BAAI/bge-large-en-v1.5'],
+                description: 'Model to use for query embedding (must match stored vectors)',
+                default: 'BAAI/bge-small-en-v1.5'
+              },
+              namespace: {
+                type: 'string',
+                description: 'Vector namespace to search in',
+                default: 'default'
+              },
+              limit: {
+                type: 'number',
+                description: 'Maximum number of results to return',
+                default: 10
+              },
+              threshold: {
+                type: 'number',
+                description: 'Minimum similarity score (0.0-1.0)',
+                default: 0.7
+              },
+              filter_metadata: {
+                type: 'object',
+                description: 'Metadata filters for search'
+              }
+            },
+            required: ['query_text']
+          }
+        },
+
         // ==================== MEMORY OPERATIONS (3) ====================
         {
           name: 'zerodb_store_memory',
@@ -105,16 +220,14 @@ class ZeroDBMCPServer {
         // ==================== VECTOR OPERATIONS (10) ====================
         {
           name: 'zerodb_upsert_vector',
-          description: 'Store or update a vector embedding with metadata (1536 dimensions)',
+          description: 'Store or update a vector embedding with metadata. Supports 384, 768, 1024, or 1536 dimensions. Dimension is auto-detected and validated.',
           inputSchema: {
             type: 'object',
             properties: {
               vector_embedding: {
                 type: 'array',
                 items: { type: 'number' },
-                description: 'Vector embedding (exactly 1536 dimensions required)',
-                minItems: 1536,
-                maxItems: 1536
+                description: 'Vector embedding (384, 768, 1024, or 1536 dimensions supported)'
               },
               document: { type: 'string', description: 'Source document or text' },
               metadata: { type: 'object', description: 'Document metadata' },
@@ -151,16 +264,14 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_search_vectors',
-          description: 'Search vectors using semantic similarity',
+          description: 'Search vectors using semantic similarity. Supports 384, 768, 1024, or 1536 dimension query vectors. Auto-detects dimension.',
           inputSchema: {
             type: 'object',
             properties: {
               query_vector: {
                 type: 'array',
                 items: { type: 'number' },
-                description: 'Query vector (exactly 1536 dimensions required)',
-                minItems: 1536,
-                maxItems: 1536
+                description: 'Query vector (384, 768, 1024, or 1536 dimensions supported)'
               },
               namespace: { type: 'string', description: 'Vector namespace' },
               limit: { type: 'number', description: 'Max results', default: 10 },
@@ -896,6 +1007,122 @@ class ZeroDBMCPServer {
           }
         },
 
+        // ==================== POSTGRESQL OPERATIONS (6) ====================
+        {
+          name: 'zerodb_postgres_query',
+          description: 'Execute SQL query on provisioned PostgreSQL instance with security validations',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              sql: { type: 'string', description: 'SQL query to execute' },
+              params: { type: 'array', items: { type: 'string' }, description: 'Query parameters for prepared statements' },
+              read_only: { type: 'boolean', description: 'Enforce read-only mode (SELECT only)', default: false },
+              timeout_seconds: { type: 'number', description: 'Query timeout in seconds', default: 30 },
+              max_rows: { type: 'number', description: 'Maximum rows to return', default: 1000 }
+            },
+            required: ['sql']
+          }
+        },
+        {
+          name: 'zerodb_postgres_schema_info',
+          description: 'Get database schema information (tables, columns, indexes)',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              table_name: { type: 'string', description: 'Optional: specific table to inspect' },
+              include_indexes: { type: 'boolean', description: 'Include index information', default: true },
+              include_constraints: { type: 'boolean', description: 'Include constraint information', default: true },
+              include_stats: { type: 'boolean', description: 'Include table statistics', default: false }
+            },
+            required: []
+          }
+        },
+        {
+          name: 'zerodb_postgres_create_table',
+          description: 'Create new table with schema definition',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              table_name: { type: 'string', description: 'Name of the table to create' },
+              columns: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    name: { type: 'string', description: 'Column name' },
+                    type: { type: 'string', description: 'Column type (e.g., VARCHAR(255), INTEGER, TIMESTAMP)' },
+                    nullable: { type: 'boolean', description: 'Allow NULL values', default: true },
+                    primary_key: { type: 'boolean', description: 'Is primary key', default: false },
+                    unique: { type: 'boolean', description: 'Unique constraint', default: false },
+                    default: { type: 'string', description: 'Default value' }
+                  },
+                  required: ['name', 'type']
+                },
+                description: 'Column definitions'
+              },
+              indexes: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    name: { type: 'string', description: 'Index name' },
+                    columns: { type: 'array', items: { type: 'string' }, description: 'Columns to index' },
+                    unique: { type: 'boolean', description: 'Unique index', default: false }
+                  },
+                  required: ['columns']
+                },
+                description: 'Index definitions'
+              },
+              if_not_exists: { type: 'boolean', description: 'Only create if table does not exist', default: true }
+            },
+            required: ['table_name', 'columns']
+          }
+        },
+        {
+          name: 'zerodb_postgres_backup',
+          description: 'Trigger PostgreSQL backup job',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              backup_type: { type: 'string', enum: ['full', 'incremental'], description: 'Backup type', default: 'full' },
+              retention_days: { type: 'number', description: 'Backup retention in days', default: 7 },
+              compression: { type: 'boolean', description: 'Compress backup', default: true },
+              include_schema: { type: 'boolean', description: 'Include schema definition', default: true },
+              include_data: { type: 'boolean', description: 'Include table data', default: true }
+            },
+            required: []
+          }
+        },
+        {
+          name: 'zerodb_postgres_restore',
+          description: 'Restore PostgreSQL database from backup',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              backup_id: { type: 'string', description: 'Backup ID to restore from' },
+              restore_type: { type: 'string', enum: ['full', 'schema_only', 'data_only'], description: 'Restore type', default: 'full' },
+              target_database: { type: 'string', description: 'Optional: restore to different database name' },
+              confirm_overwrite: { type: 'boolean', description: 'Confirm overwrite of existing data', default: false }
+            },
+            required: ['backup_id', 'confirm_overwrite']
+          }
+        },
+        {
+          name: 'zerodb_postgres_stats',
+          description: 'Get PostgreSQL database statistics (size, connections, query performance)',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              include_connections: { type: 'boolean', description: 'Include connection statistics', default: true },
+              include_queries: { type: 'boolean', description: 'Include query performance stats', default: true },
+              include_storage: { type: 'boolean', description: 'Include storage statistics', default: true },
+              include_replication: { type: 'boolean', description: 'Include replication stats', default: false },
+              time_range: { type: 'string', enum: ['hour', 'day', 'week', 'month'], description: 'Statistics time range', default: 'day' }
+            },
+            required: []
+          }
+        },
+
         // ==================== UTILITY OPERATIONS (1) ====================
         {
           name: 'zerodb_renew_token',
@@ -913,6 +1140,14 @@ class ZeroDBMCPServer {
   // Extracted routing logic for testability
   async routeToolCall (name, args) {
     switch (name) {
+      // Embedding Operations
+      case 'zerodb_generate_embeddings':
+        return await this.executeOperation('generate_embeddings', args)
+      case 'zerodb_embed_and_store':
+        return await this.executeOperation('embed_and_store', args)
+      case 'zerodb_semantic_search':
+        return await this.executeOperation('semantic_search', args)
+
       // Memory Operations
       case 'zerodb_store_memory':
         return await this.executeOperation('store_memory', args)
@@ -1050,6 +1285,20 @@ class ZeroDBMCPServer {
         return await this.executeOperation('admin_system_health', args)
       case 'zerodb_admin_optimize':
         return await this.executeOperation('admin_optimize_database', args)
+
+        // PostgreSQL Operations
+      case 'zerodb_postgres_query':
+        return await this.executeOperation('postgres_query', args)
+      case 'zerodb_postgres_schema_info':
+        return await this.executeOperation('postgres_schema_info', args)
+      case 'zerodb_postgres_create_table':
+        return await this.executeOperation('postgres_create_table', args)
+      case 'zerodb_postgres_backup':
+        return await this.executeOperation('postgres_backup', args)
+      case 'zerodb_postgres_restore':
+        return await this.executeOperation('postgres_restore', args)
+      case 'zerodb_postgres_stats':
+        return await this.executeOperation('postgres_stats', args)
 
         // Utility Operations
       case 'zerodb_renew_token':

@@ -5,6 +5,32 @@ All notable changes to the ZeroDB MCP Server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2025-12-14
+
+### Added
+- **3 New Embedding Tools** - Free embedding generation with zero API costs
+  - `zerodb_generate_embeddings` - Generate embeddings without storing
+  - `zerodb_embed_and_store` - One-step embed and store operation
+  - `zerodb_semantic_search` - Natural language semantic search with auto-embedding
+- **Multi-Dimension Support** - Support for 384, 768, 1024, and 1536 dimensional vectors
+  - 384-dim: BAAI/bge-small-en-v1.5 (default, fastest)
+  - 768-dim: BAAI/bge-base-en-v1.5 (balanced)
+  - 1024-dim: BAAI/bge-large-en-v1.5 (highest quality)
+  - 1536-dim: Legacy compatibility
+- **Free Embedding Models** - Use open-source BAAI BGE models with no OpenAI costs
+- **Enhanced Test Coverage** - 151 passing tests with 80.76% coverage
+- **Comprehensive Documentation** - New EMBEDDING_TOOLS_GUIDE.md with examples
+
+### Changed
+- Updated total operations count to 69 (66 + 3 new embedding tools)
+- Improved error handling for embedding operations
+- Enhanced API documentation with multi-dimension examples
+
+### Performance
+- Faster embedding generation with optimized model selection
+- Reduced storage costs with smaller dimension options
+- Improved semantic search accuracy with quality tier selection
+
 ## [2.0.8] - 2025-11-09
 
 ### Fixed
