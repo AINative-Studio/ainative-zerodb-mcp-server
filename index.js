@@ -1660,14 +1660,14 @@ Pass search results as context to your LLM (via chat completions or any framewor
       get_context: { method: 'GET', path: '/api/v1/public/memory/' },
 
       // Vectors
-      upsert_vector: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors' },
-      batch_upsert_vectors: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/batch' },
+      upsert_vector: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/upsert' },
+      batch_upsert_vectors: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/upsert' },
       search_vectors: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/search' },
       delete_vector: { method: 'DELETE', path: '/api/v1/projects/{project_id}/database/vectors/{vector_id}' },
       get_vector: { method: 'GET', path: '/api/v1/projects/{project_id}/database/vectors/{vector_id}' },
       list_vectors: { method: 'GET', path: '/api/v1/projects/{project_id}/database/vectors' },
       vector_stats: { method: 'GET', path: '/api/v1/projects/{project_id}/database/vectors/stats' },
-      create_vector_index: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/index' },
+      create_vector_index: { method: 'POST', path: '/api/v1/public/v1/vectors/index' },
       optimize_vectors: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/optimize' },
       export_vectors: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/export' },
 
@@ -1682,12 +1682,12 @@ Pass search results as context to your LLM (via chat completions or any framewor
       // Tables
       create_table: { method: 'POST', path: '/api/v1/projects/{project_id}/database/tables' },
       list_tables: { method: 'GET', path: '/api/v1/projects/{project_id}/database/tables' },
-      get_table: { method: 'GET', path: '/api/v1/projects/{project_id}/database/tables/{table_name}' },
+      get_table: { method: 'GET', path: '/api/v1/projects/{project_id}/database/tables/{table_id}' },
       delete_table: { method: 'DELETE', path: '/api/v1/projects/{project_id}/database/tables/{table_name}' },
       insert_rows: { method: 'POST', path: '/api/v1/projects/{project_id}/database/tables/{table_name}/rows' },
       query_rows: { method: 'POST', path: '/api/v1/projects/{project_id}/database/tables/{table_name}/query' },
-      update_rows: { method: 'PUT', path: '/api/v1/projects/{project_id}/database/tables/{table_name}/rows' },
-      delete_rows: { method: 'DELETE', path: '/api/v1/projects/{project_id}/database/tables/{table_name}/rows' },
+      update_rows: { method: 'PUT', path: '/api/v1/projects/{project_id}/database/tables/{table_name}/rows/bulk' },
+      delete_rows: { method: 'DELETE', path: '/api/v1/projects/{project_id}/database/tables/{table_name}/rows/bulk' },
 
       // Files
       upload_file: { method: 'POST', path: '/api/v1/projects/{project_id}/files/upload', multipart: true },
@@ -1705,7 +1705,7 @@ Pass search results as context to your LLM (via chat completions or any framewor
       event_stats: { method: 'GET', path: '/api/v1/projects/{project_id}/database/events/stats' },
 
       // Projects
-      create_project: { method: 'POST', path: '/api/v1/projects/' },
+      create_project: { method: 'POST', path: '/api/v1/projects' },
       list_projects: { method: 'GET', path: '/api/v1/projects/' },
       get_project: { method: 'GET', path: '/api/v1/projects/{project_id}' },
       update_project: { method: 'PUT', path: '/api/v1/projects/{project_id}' },
