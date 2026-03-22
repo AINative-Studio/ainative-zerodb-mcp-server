@@ -1514,6 +1514,10 @@ Use \`zerodb_get_project\` to verify your project exists and see its configurati
 ### Step 4: Generate embeddings (FREE)
 \`zerodb_generate_embeddings\` — BAAI/bge-small-en-v1.5 (384-dim), no OpenAI costs.
 
+## Requirements
+- For the best experience, use a model with 1M+ context window (e.g., Claude Opus, Gemini Pro)
+- The MCP server exposes 66 tools with detailed schemas — large context helps
+
 ## Key Facts
 - Embeddings are FREE (powered by TEI)
 - project_id is required for most operations
@@ -1668,8 +1672,9 @@ Pass search results as context to your LLM (via chat completions or any framewor
       list_vectors: { method: 'GET', path: '/api/v1/projects/{project_id}/database/vectors' },
       vector_stats: { method: 'GET', path: '/api/v1/projects/{project_id}/database/vectors/stats' },
       create_vector_index: { method: 'POST', path: '/api/v1/public/v1/vectors/index' },
-      optimize_vectors: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/optimize' },
-      export_vectors: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/export' },
+      // optimize_vectors and export_vectors have no backend endpoint yet
+      // optimize_vectors: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/optimize' },
+      // export_vectors: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/export' },
 
       // Quantum
       quantum_compress: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/quantum/compress' },
@@ -1701,14 +1706,15 @@ Pass search results as context to your LLM (via chat completions or any framewor
       create_event: { method: 'POST', path: '/api/v1/projects/{project_id}/database/events' },
       list_events: { method: 'GET', path: '/api/v1/projects/{project_id}/database/events' },
       get_event: { method: 'GET', path: '/api/v1/projects/{project_id}/database/events/{event_id}' },
-      subscribe_events: { method: 'POST', path: '/api/v1/projects/{project_id}/database/events/subscribe' },
+      // subscribe_events is WebSocket, not REST — use list_events instead
+      // subscribe_events: { method: 'POST', path: '/api/v1/projects/{project_id}/database/events/subscribe' },
       event_stats: { method: 'GET', path: '/api/v1/projects/{project_id}/database/events/stats' },
 
       // Projects
       create_project: { method: 'POST', path: '/api/v1/projects' },
       list_projects: { method: 'GET', path: '/api/v1/projects/' },
       get_project: { method: 'GET', path: '/api/v1/projects/{project_id}' },
-      update_project: { method: 'PUT', path: '/api/v1/projects/{project_id}' },
+      update_project: { method: 'PATCH', path: '/api/v1/projects/{project_id}' },
       delete_project: { method: 'DELETE', path: '/api/v1/projects/{project_id}' },
       get_project_stats: { method: 'GET', path: '/api/v1/projects/{project_id}/usage' },
       enable_database: { method: 'POST', path: '/api/v1/projects/{project_id}/database/enable' },
@@ -1764,6 +1770,33 @@ Pass search results as context to your LLM (via chat completions or any framewor
         throw new Error(`Unknown operation: ${operation}. Available: ${Object.keys(ZeroDBMCPServer.OPERATION_ROUTES).join(', ')}`)
       }
 
+      // Map MCP tool param names → API field names where they differ
+      const PARAM_MAPPINGS = {
+        create_event: { event_type: 'topic', data: 'event_payload' },
+      }
+      const mapping = PARAM_MAPPINGS[operation]
+      if (mapping) {
+        for (const [from, to] of Object.entries(mapping)) {
+          if (params[from] !== undefined && params[to] === undefined) {
+            params[to] = params[from]
+            delete params[from]
+          }
+        }
+      }
+
+      // Special transforms for operations with different data shapes
+      if (operation === 'insert_rows' && params.rows) {
+        // API expects row_data (single dict), not rows (array)
+        // Insert one row at a time, or send first row
+        params.row_data = Array.isArray(params.rows) ? params.rows[0] : params.rows
+        delete params.rows
+      }
+      if (operation === 'update_rows' && params.data) {
+        // API expects MongoDB-style update operators
+        params.update = { '$set': params.data }
+        delete params.data
+      }
+
       // Build URL with path parameter substitution
       let url = `${this.apiUrl}${route.path}`
       url = url.replace('{project_id}', projectId || '')
@@ -1787,9 +1820,11 @@ Pass search results as context to your LLM (via chat completions or any framewor
       if (route.method === 'GET') {
         response = await axios.get(url, { ...config, params })
       } else if (route.method === 'DELETE') {
-        response = await axios.delete(url, config)
+        response = await axios.delete(url, { ...config, data: params })
       } else if (route.method === 'PUT') {
         response = await axios.put(url, params, config)
+      } else if (route.method === 'PATCH') {
+        response = await axios.patch(url, params, config)
       } else {
         response = await axios.post(url, params, config)
       }
