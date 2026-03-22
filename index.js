@@ -8,7 +8,7 @@ const axios = require('axios')
 /**
  * ZeroDB MCP Server v2.2.0
  *
- * Complete implementation with ALL 69 operations across 10 categories (66 + 3 embedding tools):
+ * Complete implementation with ALL 76 operations across 11 categories:
  * - Vector Operations (10): upsert, batch_upsert, search, delete, get, list, stats, create_index, optimize, export
  * - Quantum Operations (6): compress, decompress, hybrid_similarity, optimize_space, feature_map, kernel_similarity
  * - Table Operations (8): create_table, list_tables, get_table, delete_table, insert_rows, query_rows, update_rows, delete_rows
@@ -19,6 +19,7 @@ const axios = require('axios')
  * - Memory Operations (3): store_memory, search_memory, get_context
  * - Admin Operations (5): system_stats, list_all_projects, user_usage, system_health, optimize_database
  * - PostgreSQL Operations (6): query, schema_info, create_table, backup, restore, stats
+ * - Dedicated PostgreSQL Management (7): provision, status, connection, usage, logs, restart, delete
  */
 
 class ZeroDBMCPServer {
@@ -40,7 +41,7 @@ class ZeroDBMCPServer {
     this.server = new Server(
       {
         name: 'zerodb-mcp',
-        version: '2.2.0'
+        version: '2.1.0'
       },
       {
         capabilities: {
@@ -1123,6 +1124,128 @@ class ZeroDBMCPServer {
           }
         },
 
+        // ==================== DEDICATED POSTGRESQL MANAGEMENT (7) ====================
+        {
+          name: 'zerodb_provision_postgres',
+          description: 'Provision a dedicated PostgreSQL instance via Railway with dedicated resources',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              project_id: { type: 'string', description: 'ZeroDB project ID' },
+              instance_size: {
+                type: 'string',
+                enum: ['micro-1', 'standard-2', 'standard-4', 'performance-8', 'performance-16'],
+                description: 'Instance size: micro-1 ($5/mo), standard-2 ($10/mo), standard-4 ($25/mo), performance-8 ($50/mo), performance-16 ($100/mo)',
+                default: 'micro-1'
+              },
+              postgres_version: {
+                type: 'string',
+                enum: ['13', '14', '15'],
+                description: 'PostgreSQL version',
+                default: '15'
+              },
+              tags: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Optional tags for organization',
+                default: []
+              }
+            },
+            required: ['project_id', 'instance_size']
+          }
+        },
+        {
+          name: 'zerodb_get_postgres_status',
+          description: 'Get status and health metrics for dedicated PostgreSQL instance',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              project_id: { type: 'string', description: 'ZeroDB project ID' }
+            },
+            required: ['project_id']
+          }
+        },
+        {
+          name: 'zerodb_get_postgres_connection',
+          description: 'Get connection credentials for PostgreSQL instance (database_url, host, port, etc.)',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              project_id: { type: 'string', description: 'ZeroDB project ID' },
+              credential_type: {
+                type: 'string',
+                enum: ['primary', 'readonly', 'admin'],
+                description: 'Type of credentials to retrieve',
+                default: 'primary'
+              }
+            },
+            required: ['project_id']
+          }
+        },
+        {
+          name: 'zerodb_get_postgres_usage',
+          description: 'Get usage statistics and billing information for PostgreSQL instance',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              project_id: { type: 'string', description: 'ZeroDB project ID' },
+              hours: {
+                type: 'number',
+                description: 'Time range in hours for statistics (default: 24)',
+                default: 24
+              }
+            },
+            required: ['project_id']
+          }
+        },
+        {
+          name: 'zerodb_get_postgres_logs',
+          description: 'Get SQL query logs with performance metrics and credit consumption',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              project_id: { type: 'string', description: 'ZeroDB project ID' },
+              limit: {
+                type: 'number',
+                description: 'Maximum number of log entries to return (default: 100)',
+                default: 100
+              },
+              query_type: {
+                type: 'string',
+                enum: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
+                description: 'Optional: filter by query type'
+              }
+            },
+            required: ['project_id']
+          }
+        },
+        {
+          name: 'zerodb_restart_postgres',
+          description: 'Restart the dedicated PostgreSQL instance (completes in 30-60 seconds)',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              project_id: { type: 'string', description: 'ZeroDB project ID' }
+            },
+            required: ['project_id']
+          }
+        },
+        {
+          name: 'zerodb_delete_postgres',
+          description: 'Delete the PostgreSQL instance and all data (requires confirmation)',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              project_id: { type: 'string', description: 'ZeroDB project ID' },
+              confirm: {
+                type: 'boolean',
+                description: 'Must be true to confirm deletion and data loss'
+              }
+            },
+            required: ['project_id', 'confirm']
+          }
+        },
+
         // ==================== UTILITY OPERATIONS (1) ====================
         {
           name: 'zerodb_renew_token',
@@ -1300,6 +1423,22 @@ class ZeroDBMCPServer {
       case 'zerodb_postgres_stats':
         return await this.executeOperation('postgres_stats', args)
 
+        // Dedicated PostgreSQL Management Operations
+      case 'zerodb_provision_postgres':
+        return await this.provisionPostgres(args)
+      case 'zerodb_get_postgres_status':
+        return await this.getPostgresStatus(args)
+      case 'zerodb_get_postgres_connection':
+        return await this.getPostgresConnection(args)
+      case 'zerodb_get_postgres_usage':
+        return await this.getPostgresUsage(args)
+      case 'zerodb_get_postgres_logs':
+        return await this.getPostgresLogs(args)
+      case 'zerodb_restart_postgres':
+        return await this.restartPostgres(args)
+      case 'zerodb_delete_postgres':
+        return await this.deletePostgres(args)
+
         // Utility Operations
       case 'zerodb_renew_token':
         return await this.manualTokenRenewal()
@@ -1333,62 +1472,173 @@ class ZeroDBMCPServer {
   }
 
   /**
-   * Execute an operation through the unified MCP execute endpoint
-   * @param {string} operation - Backend operation name (e.g., 'upsert_vector')
+   * REST endpoint routing table.
+   * Maps operation names to {method, path} for direct REST calls.
+   * Replaces the deprecated /mcp/execute wrapper (410 Gone since 2026-01-08).
+   *
+   * Path placeholders: {project_id} is auto-replaced with this.projectId.
+   */
+  static get OPERATION_ROUTES () {
+    return {
+      // Embeddings
+      generate_embeddings: { method: 'POST', path: '/api/v1/projects/{project_id}/embeddings/generate' },
+      embed_and_store: { method: 'POST', path: '/api/v1/projects/{project_id}/embeddings/embed-and-store' },
+      semantic_search: { method: 'POST', path: '/api/v1/projects/{project_id}/embeddings/search' },
+
+      // Memory
+      store_memory: { method: 'POST', path: '/api/v1/public/memory/' },
+      search_memory: { method: 'POST', path: '/api/v1/public/memory/search' },
+      get_context: { method: 'GET', path: '/api/v1/public/memory/' },
+
+      // Vectors
+      upsert_vector: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors' },
+      batch_upsert_vectors: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/batch' },
+      search_vectors: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/search' },
+      delete_vector: { method: 'DELETE', path: '/api/v1/projects/{project_id}/database/vectors/{vector_id}' },
+      get_vector: { method: 'GET', path: '/api/v1/projects/{project_id}/database/vectors/{vector_id}' },
+      list_vectors: { method: 'GET', path: '/api/v1/projects/{project_id}/database/vectors' },
+      vector_stats: { method: 'GET', path: '/api/v1/projects/{project_id}/database/vectors/stats' },
+      create_vector_index: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/index' },
+      optimize_vectors: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/optimize' },
+      export_vectors: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/export' },
+
+      // Quantum
+      quantum_compress: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/quantum/compress' },
+      quantum_decompress: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/quantum/decompress' },
+      quantum_hybrid_search: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/quantum/search' },
+      quantum_optimize: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/quantum/optimize' },
+      quantum_feature_map: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/quantum/feature-map' },
+      quantum_kernel: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/quantum/kernel' },
+
+      // Tables
+      create_table: { method: 'POST', path: '/api/v1/projects/{project_id}/database/tables' },
+      list_tables: { method: 'GET', path: '/api/v1/projects/{project_id}/database/tables' },
+      get_table: { method: 'GET', path: '/api/v1/projects/{project_id}/database/tables/{table_name}' },
+      delete_table: { method: 'DELETE', path: '/api/v1/projects/{project_id}/database/tables/{table_name}' },
+      insert_rows: { method: 'POST', path: '/api/v1/projects/{project_id}/database/tables/{table_name}/rows' },
+      query_rows: { method: 'POST', path: '/api/v1/projects/{project_id}/database/tables/{table_name}/query' },
+      update_rows: { method: 'PUT', path: '/api/v1/projects/{project_id}/database/tables/{table_name}/rows' },
+      delete_rows: { method: 'DELETE', path: '/api/v1/projects/{project_id}/database/tables/{table_name}/rows' },
+
+      // Files
+      upload_file: { method: 'POST', path: '/api/v1/projects/{project_id}/files/upload', multipart: true },
+      list_files: { method: 'GET', path: '/api/v1/projects/{project_id}/files' },
+      get_file_metadata: { method: 'GET', path: '/api/v1/projects/{project_id}/files/{file_id}' },
+      download_file: { method: 'GET', path: '/api/v1/projects/{project_id}/files/{file_id}/download' },
+      delete_file: { method: 'DELETE', path: '/api/v1/projects/{project_id}/files/{file_id}' },
+      generate_presigned_url: { method: 'POST', path: '/api/v1/projects/{project_id}/files/{file_id}/presigned-url' },
+
+      // Events
+      create_event: { method: 'POST', path: '/api/v1/projects/{project_id}/database/events' },
+      list_events: { method: 'GET', path: '/api/v1/projects/{project_id}/database/events' },
+      get_event: { method: 'GET', path: '/api/v1/projects/{project_id}/database/events/{event_id}' },
+      subscribe_events: { method: 'POST', path: '/api/v1/projects/{project_id}/database/events/subscribe' },
+      event_stats: { method: 'GET', path: '/api/v1/projects/{project_id}/database/events/stats' },
+
+      // Projects
+      create_project: { method: 'POST', path: '/api/v1/projects/' },
+      list_projects: { method: 'GET', path: '/api/v1/projects/' },
+      get_project: { method: 'GET', path: '/api/v1/projects/{project_id}' },
+      update_project: { method: 'PUT', path: '/api/v1/projects/{project_id}' },
+      delete_project: { method: 'DELETE', path: '/api/v1/projects/{project_id}' },
+      get_project_stats: { method: 'GET', path: '/api/v1/projects/{project_id}/stats' },
+      enable_database: { method: 'POST', path: '/api/v1/projects/{project_id}/database/enable' },
+
+      // RLHF
+      rlhf_collect_interaction: { method: 'POST', path: '/api/v1/projects/{project_id}/database/rlhf/interactions' },
+      rlhf_collect_agent_feedback: { method: 'POST', path: '/api/v1/projects/{project_id}/database/rlhf/agent-feedback' },
+      rlhf_collect_workflow_feedback: { method: 'POST', path: '/api/v1/projects/{project_id}/database/rlhf/workflow-feedback' },
+      rlhf_collect_error_report: { method: 'POST', path: '/api/v1/projects/{project_id}/database/rlhf/error-reports' },
+      rlhf_get_status: { method: 'GET', path: '/api/v1/projects/{project_id}/database/rlhf/status' },
+      rlhf_get_summary: { method: 'GET', path: '/api/v1/projects/{project_id}/database/rlhf/summary' },
+      rlhf_start_collection: { method: 'POST', path: '/api/v1/projects/{project_id}/database/rlhf/start' },
+      rlhf_stop_collection: { method: 'POST', path: '/api/v1/projects/{project_id}/database/rlhf/stop' },
+      rlhf_get_session_interactions: { method: 'GET', path: '/api/v1/projects/{project_id}/database/rlhf/sessions/{session_id}' },
+      rlhf_broadcast_event: { method: 'POST', path: '/api/v1/projects/{project_id}/database/rlhf/broadcast' },
+
+      // Admin
+      admin_get_system_stats: { method: 'GET', path: '/api/v1/admin/system-stats' },
+      admin_list_all_projects: { method: 'GET', path: '/api/v1/admin/projects' },
+      admin_get_user_usage: { method: 'GET', path: '/api/v1/admin/usage' },
+      admin_system_health: { method: 'GET', path: '/api/v1/admin/health' },
+      admin_optimize_database: { method: 'POST', path: '/api/v1/admin/optimize' },
+
+      // Postgres (basic operations via REST)
+      postgres_query: { method: 'POST', path: '/api/v1/projects/{project_id}/database/postgres/query' },
+      postgres_schema_info: { method: 'GET', path: '/api/v1/projects/{project_id}/database/postgres/schema' },
+      postgres_create_table: { method: 'POST', path: '/api/v1/projects/{project_id}/database/postgres/tables' },
+      postgres_backup: { method: 'POST', path: '/api/v1/projects/{project_id}/database/postgres/backup' },
+      postgres_restore: { method: 'POST', path: '/api/v1/projects/{project_id}/database/postgres/restore' },
+      postgres_stats: { method: 'GET', path: '/api/v1/projects/{project_id}/database/postgres/stats' },
+    }
+  }
+
+  /**
+   * Execute an operation by routing to the correct REST endpoint.
+   * Replaces the deprecated /mcp/execute wrapper.
+   *
+   * @param {string} operation - Backend operation name
    * @param {object} params - Operation parameters
    * @returns {object} MCP response
    */
   async executeOperation (operation, params) {
     try {
-      // Add project_id to params if not present and we have one
-      if (!params.project_id && this.projectId) {
-        params.project_id = this.projectId
+      const projectId = params.project_id || this.projectId
+      if (!projectId && operation !== 'list_projects' && operation !== 'create_project' &&
+          !operation.startsWith('admin_') && operation !== 'store_memory' &&
+          operation !== 'search_memory' && operation !== 'get_context') {
+        throw new Error('project_id is required. Set ZERODB_PROJECT_ID or pass project_id in params.')
       }
 
-      console.error(`Executing operation: ${operation}`)
+      const route = ZeroDBMCPServer.OPERATION_ROUTES[operation]
+      if (!route) {
+        throw new Error(`Unknown operation: ${operation}. Available: ${Object.keys(ZeroDBMCPServer.OPERATION_ROUTES).join(', ')}`)
+      }
 
-      const response = await axios.post(
-        `${this.apiUrl}/v1/public/zerodb/mcp/execute`,
-        {
-          operation,
-          params
+      // Build URL with path parameter substitution
+      let url = `${this.apiUrl}${route.path}`
+      url = url.replace('{project_id}', projectId || '')
+
+      // Replace any other path params from params object
+      for (const [key, value] of Object.entries(params)) {
+        url = url.replace(`{${key}}`, value)
+      }
+
+      console.error(`${route.method} ${url}`)
+
+      const config = {
+        headers: {
+          Authorization: `Bearer ${this.apiToken}`,
+          'Content-Type': 'application/json'
         },
-        {
-          headers: {
-            Authorization: `Bearer ${this.apiToken}`,
-            'Content-Type': 'application/json'
-          },
-          timeout: 30000 // 30 second timeout for operations
-        }
-      )
+        timeout: 30000
+      }
 
-      // Check if operation was successful
-      if (response.data.success) {
-        return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify(response.data.result, null, 2)
-          }]
-        }
+      let response
+      if (route.method === 'GET') {
+        response = await axios.get(url, { ...config, params })
+      } else if (route.method === 'DELETE') {
+        response = await axios.delete(url, config)
+      } else if (route.method === 'PUT') {
+        response = await axios.put(url, params, config)
       } else {
-        return {
-          content: [{
-            type: 'text',
-            text: `Operation failed: ${JSON.stringify(response.data.error, null, 2)}`
-          }],
-          isError: true
-        }
+        response = await axios.post(url, params, config)
+      }
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify(response.data, null, 2)
+        }]
       }
     } catch (error) {
-      const errorMsg = error.response?.data?.error?.message || error.message
-      const errorDetails = error.response?.data?.error?.details || ''
-
+      const errorMsg = error.response?.data?.detail || error.response?.data?.error?.message || error.message
       console.error(`Operation ${operation} failed:`, errorMsg)
 
       return {
         content: [{
           type: 'text',
-          text: `Error executing ${operation}: ${errorMsg}${errorDetails ? '\nDetails: ' + JSON.stringify(errorDetails) : ''}`
+          text: `Error executing ${operation}: ${errorMsg}`
         }],
         isError: true
       }
@@ -1465,6 +1715,329 @@ class ZeroDBMCPServer {
     }, 25 * 60 * 1000)
   }
 
+  // ==================== DEDICATED POSTGRESQL MANAGEMENT METHODS ====================
+
+  /**
+   * Provision a dedicated PostgreSQL instance
+   */
+  async provisionPostgres (args) {
+    try {
+      const { project_id, instance_size, postgres_version = '15', tags = [] } = args
+
+      if (!project_id) {
+        throw new Error('project_id is required')
+      }
+
+      console.error(`Provisioning PostgreSQL instance for project ${project_id}...`)
+
+      const response = await axios.post(
+        `${this.apiUrl}/v1/zerodb/projects/${project_id}/postgres`,
+        {
+          instance_size,
+          postgres_version,
+          tags
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${this.apiToken}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 30000
+        }
+      )
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify(response.data, null, 2)
+        }]
+      }
+    } catch (error) {
+      const errorMsg = error.response?.data?.detail || error.response?.data?.message || error.message
+      console.error('PostgreSQL provisioning failed:', errorMsg)
+
+      return {
+        content: [{
+          type: 'text',
+          text: `Error provisioning PostgreSQL: ${errorMsg}`
+        }],
+        isError: true
+      }
+    }
+  }
+
+  /**
+   * Get PostgreSQL instance status
+   */
+  async getPostgresStatus (args) {
+    try {
+      const { project_id } = args
+
+      if (!project_id) {
+        throw new Error('project_id is required')
+      }
+
+      console.error(`Getting PostgreSQL status for project ${project_id}...`)
+
+      const response = await axios.get(
+        `${this.apiUrl}/v1/zerodb/projects/${project_id}/postgres`,
+        {
+          headers: {
+            Authorization: `Bearer ${this.apiToken}`
+          },
+          timeout: 30000
+        }
+      )
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify(response.data, null, 2)
+        }]
+      }
+    } catch (error) {
+      const errorMsg = error.response?.data?.detail || error.response?.data?.message || error.message
+      console.error('Get PostgreSQL status failed:', errorMsg)
+
+      return {
+        content: [{
+          type: 'text',
+          text: `Error getting PostgreSQL status: ${errorMsg}`
+        }],
+        isError: true
+      }
+    }
+  }
+
+  /**
+   * Get PostgreSQL connection credentials
+   */
+  async getPostgresConnection (args) {
+    try {
+      const { project_id, credential_type = 'primary' } = args
+
+      if (!project_id) {
+        throw new Error('project_id is required')
+      }
+
+      console.error(`Getting PostgreSQL connection for project ${project_id}...`)
+
+      const response = await axios.get(
+        `${this.apiUrl}/v1/zerodb/projects/${project_id}/postgres/connection`,
+        {
+          params: { credential_type },
+          headers: {
+            Authorization: `Bearer ${this.apiToken}`
+          },
+          timeout: 30000
+        }
+      )
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify(response.data, null, 2)
+        }]
+      }
+    } catch (error) {
+      const errorMsg = error.response?.data?.detail || error.response?.data?.message || error.message
+      console.error('Get PostgreSQL connection failed:', errorMsg)
+
+      return {
+        content: [{
+          type: 'text',
+          text: `Error getting PostgreSQL connection: ${errorMsg}`
+        }],
+        isError: true
+      }
+    }
+  }
+
+  /**
+   * Get PostgreSQL usage statistics
+   */
+  async getPostgresUsage (args) {
+    try {
+      const { project_id, hours = 24 } = args
+
+      if (!project_id) {
+        throw new Error('project_id is required')
+      }
+
+      console.error(`Getting PostgreSQL usage for project ${project_id}...`)
+
+      const response = await axios.get(
+        `${this.apiUrl}/v1/zerodb/projects/${project_id}/postgres/usage`,
+        {
+          params: { hours },
+          headers: {
+            Authorization: `Bearer ${this.apiToken}`
+          },
+          timeout: 30000
+        }
+      )
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify(response.data, null, 2)
+        }]
+      }
+    } catch (error) {
+      const errorMsg = error.response?.data?.detail || error.response?.data?.message || error.message
+      console.error('Get PostgreSQL usage failed:', errorMsg)
+
+      return {
+        content: [{
+          type: 'text',
+          text: `Error getting PostgreSQL usage: ${errorMsg}`
+        }],
+        isError: true
+      }
+    }
+  }
+
+  /**
+   * Get PostgreSQL query logs
+   */
+  async getPostgresLogs (args) {
+    try {
+      const { project_id, limit = 100, query_type } = args
+
+      if (!project_id) {
+        throw new Error('project_id is required')
+      }
+
+      console.error(`Getting PostgreSQL logs for project ${project_id}...`)
+
+      const params = { limit }
+      if (query_type) {
+        params.query_type = query_type
+      }
+
+      const response = await axios.get(
+        `${this.apiUrl}/v1/zerodb/projects/${project_id}/postgres/logs`,
+        {
+          params,
+          headers: {
+            Authorization: `Bearer ${this.apiToken}`
+          },
+          timeout: 30000
+        }
+      )
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify(response.data, null, 2)
+        }]
+      }
+    } catch (error) {
+      const errorMsg = error.response?.data?.detail || error.response?.data?.message || error.message
+      console.error('Get PostgreSQL logs failed:', errorMsg)
+
+      return {
+        content: [{
+          type: 'text',
+          text: `Error getting PostgreSQL logs: ${errorMsg}`
+        }],
+        isError: true
+      }
+    }
+  }
+
+  /**
+   * Restart PostgreSQL instance
+   */
+  async restartPostgres (args) {
+    try {
+      const { project_id } = args
+
+      if (!project_id) {
+        throw new Error('project_id is required')
+      }
+
+      console.error(`Restarting PostgreSQL instance for project ${project_id}...`)
+
+      const response = await axios.post(
+        `${this.apiUrl}/v1/zerodb/projects/${project_id}/postgres/restart`,
+        {},
+        {
+          headers: {
+            Authorization: `Bearer ${this.apiToken}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 60000 // 60 second timeout for restart
+        }
+      )
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify(response.data, null, 2)
+        }]
+      }
+    } catch (error) {
+      const errorMsg = error.response?.data?.detail || error.response?.data?.message || error.message
+      console.error('PostgreSQL restart failed:', errorMsg)
+
+      return {
+        content: [{
+          type: 'text',
+          text: `Error restarting PostgreSQL: ${errorMsg}`
+        }],
+        isError: true
+      }
+    }
+  }
+
+  /**
+   * Delete PostgreSQL instance
+   */
+  async deletePostgres (args) {
+    try {
+      const { project_id, confirm } = args
+
+      if (!project_id) {
+        throw new Error('project_id is required')
+      }
+
+      if (!confirm) {
+        throw new Error('confirm must be true to delete PostgreSQL instance and all data')
+      }
+
+      console.error(`Deleting PostgreSQL instance for project ${project_id}...`)
+
+      const response = await axios.delete(
+        `${this.apiUrl}/v1/zerodb/projects/${project_id}/postgres`,
+        {
+          headers: {
+            Authorization: `Bearer ${this.apiToken}`
+          },
+          timeout: 30000
+        }
+      )
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify(response.data, null, 2)
+        }]
+      }
+    } catch (error) {
+      const errorMsg = error.response?.data?.detail || error.response?.data?.message || error.message
+      console.error('PostgreSQL deletion failed:', errorMsg)
+
+      return {
+        content: [{
+          type: 'text',
+          text: `Error deleting PostgreSQL: ${errorMsg}`
+        }],
+        isError: true
+      }
+    }
+  }
+
   async start () {
     try {
       // Initial token acquisition
@@ -1474,11 +2047,21 @@ class ZeroDBMCPServer {
 
       const transport = new StdioServerTransport()
       await this.server.connect(transport)
-      console.error('ZeroDB MCP Server v2.0.8 running on stdio')
-      console.error(`API URL: ${this.apiUrl}`)
-      console.error(`Project ID: ${this.projectId}`)
-      console.error('Operations: 60 (100% coverage)')
-      console.error(`Token expires: ${this.tokenExpiry ? new Date(this.tokenExpiry).toISOString() : 'Unknown'}`)
+      console.error('')
+      console.error('  ███████╗███████╗██████╗  ██████╗ ██████╗ ██████╗')
+      console.error('  ╚══███╔╝██╔════╝██╔══██╗██╔═══██╗██╔══██╗██╔══██╗')
+      console.error('    ███╔╝ █████╗  ██████╔╝██║   ██║██║  ██║██████╔╝')
+      console.error('   ███╔╝  ██╔══╝  ██╔══██╗██║   ██║██║  ██║██╔══██╗')
+      console.error('  ███████╗███████╗██║  ██║╚██████╔╝██████╔╝██████╔╝')
+      console.error('  ╚══════╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚═════╝')
+      console.error('  The Persistent Knowledge Layer for AI Agents')
+      console.error('  Built by AINative Studio')
+      console.error('')
+      console.error('  MCP Server v2.3.0 | 77 tools | REST-routed')
+      console.error(`  API: ${this.apiUrl}`)
+      console.error(`  Project: ${this.projectId}`)
+      console.error(`  Token expires: ${this.tokenExpiry ? new Date(this.tokenExpiry).toISOString() : 'Unknown'}`)
+      console.error('')
     } catch (error) {
       console.error('Failed to start ZeroDB MCP Server:', error.message)
       process.exit(1)
