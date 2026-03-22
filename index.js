@@ -2,7 +2,7 @@
 
 const { Server } = require('@modelcontextprotocol/sdk/server/index.js')
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js')
-const { CallToolRequestSchema, ListToolsRequestSchema } = require('@modelcontextprotocol/sdk/types.js')
+const { CallToolRequestSchema, ListToolsRequestSchema, ListPromptsRequestSchema, GetPromptRequestSchema } = require('@modelcontextprotocol/sdk/types.js')
 const axios = require('axios')
 
 /**
@@ -41,16 +41,18 @@ class ZeroDBMCPServer {
     this.server = new Server(
       {
         name: 'zerodb-mcp',
-        version: '2.1.0'
+        version: '2.3.0'
       },
       {
         capabilities: {
-          tools: {}
+          tools: {},
+          prompts: {}
         }
       }
     )
 
     this.setupTools()
+    this.setupPrompts()
     this.setupHandlers()
     this.setupTokenRenewal()
   }
@@ -1448,6 +1450,173 @@ class ZeroDBMCPServer {
     }
   }
 
+  /**
+   * MCP Prompts — provide LLMs with structured instructions for using ZeroDB.
+   * These are discoverable via prompts/list and give agents the DX context
+   * they need to use the server effectively.
+   */
+  setupPrompts () {
+    this.server.setRequestHandler(ListPromptsRequestSchema, async () => ({
+      prompts: [
+        {
+          name: 'zerodb-quickstart',
+          title: 'ZeroDB Quick Start Guide',
+          description: 'How to use ZeroDB MCP server — start here. Explains the project model, authentication, and recommended tool usage order.',
+        },
+        {
+          name: 'zerodb-memory-guide',
+          title: 'Memory Operations Guide',
+          description: 'How to store, search, and manage persistent agent memory in ZeroDB.',
+        },
+        {
+          name: 'zerodb-rag-guide',
+          title: 'RAG Pipeline Guide',
+          description: 'How to build a Retrieval Augmented Generation pipeline with ZeroDB embeddings and semantic search.',
+        },
+      ]
+    }))
+
+    this.server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+      const { name } = request.params
+
+      if (name === 'zerodb-quickstart') {
+        return {
+          description: 'ZeroDB Quick Start — The Persistent Knowledge Layer for AI Agents',
+          messages: [{
+            role: 'user',
+            content: {
+              type: 'text',
+              text: `# ZeroDB MCP Server — Quick Start Guide
+
+## What is ZeroDB?
+The persistent knowledge layer for AI agents. Memory, search, storage, and free embeddings in one product.
+
+## How This MCP Server Works
+Every operation requires a **project_id**. Your project ID is: ${this.projectId || 'NOT SET — use zerodb_list_projects or zerodb_create_project first'}
+
+## Recommended Workflow
+
+### Step 1: Check your project
+Use \`zerodb_get_project\` to verify your project exists and see its configuration.
+
+### Step 2: Store data
+- **Memory**: \`zerodb_store_memory\` — store facts, preferences, conversation context
+- **Vectors**: \`zerodb_upsert_vector\` — store raw vector embeddings
+- **Tables**: \`zerodb_create_table\` + \`zerodb_insert_rows\` — structured data
+- **Files**: \`zerodb_upload_file\` — images, documents, media
+
+### Step 3: Search & retrieve
+- **Semantic search**: \`zerodb_semantic_search\` — find by meaning (FREE embeddings)
+- **Memory search**: \`zerodb_search_memory\` — search stored memories
+- **Vector search**: \`zerodb_search_vectors\` — raw vector similarity
+- **Table query**: \`zerodb_query_rows\` — structured data queries
+
+### Step 4: Generate embeddings (FREE)
+\`zerodb_generate_embeddings\` — BAAI/bge-small-en-v1.5 (384-dim), no OpenAI costs.
+
+## Key Facts
+- Embeddings are FREE (powered by TEI)
+- project_id is required for most operations
+- Memory operations (\`store_memory\`, \`search_memory\`) work without project_id
+- All data is persistent across sessions
+- 77 tools available across 11 categories
+
+## Tool Categories
+- Embeddings (3): generate, embed+store, semantic search
+- Memory (3): store, search, get context
+- Vectors (10): CRUD + search + optimize + export
+- Tables (8): CRUD + query + update
+- Files (6): upload, download, list, delete, presigned URLs
+- Events (5): create, list, get, subscribe, stats
+- Projects (7): CRUD + stats + enable database
+- PostgreSQL (13): direct SQL, schema, backup/restore
+- Quantum (6): compress, decompress, hybrid search
+- RLHF (10): feedback collection, sessions, workflows
+- Admin (5): stats, health, optimize`
+            }
+          }]
+        }
+      }
+
+      if (name === 'zerodb-memory-guide') {
+        return {
+          description: 'ZeroDB Memory Operations — Persistent Agent Memory',
+          messages: [{
+            role: 'user',
+            content: {
+              type: 'text',
+              text: `# ZeroDB Memory Guide
+
+## Storing Memories
+Use \`zerodb_store_memory\` with:
+- content: The memory text (e.g., "User prefers dark mode")
+- role: "user", "assistant", or "system"
+- tags: Optional categorization (e.g., ["preference", "ui"])
+- session_id: Group memories by conversation
+
+## Searching Memories
+Use \`zerodb_search_memory\` with:
+- query: Natural language search (e.g., "What does the user prefer?")
+- limit: Max results (default: 10)
+- session_id: Optional scope to specific conversation
+
+## Getting Context
+Use \`zerodb_get_context\` to retrieve the full conversation context for a session.
+Useful for building context windows for LLM calls.
+
+## Embedding + Store (Combined)
+Use \`zerodb_embed_and_store\` to embed text and store as a vector in one step.
+Embeddings are FREE — no OpenAI key needed.
+
+## Tips
+- Store important facts as memories, not just chat history
+- Use tags to categorize: ["preference", "fact", "instruction"]
+- Search returns results ranked by semantic similarity
+- Memories persist across sessions — your agent never forgets`
+            }
+          }]
+        }
+      }
+
+      if (name === 'zerodb-rag-guide') {
+        return {
+          description: 'ZeroDB RAG Pipeline — Retrieval Augmented Generation',
+          messages: [{
+            role: 'user',
+            content: {
+              type: 'text',
+              text: `# ZeroDB RAG Pipeline Guide
+
+## Step 1: Ingest Documents
+\`zerodb_embed_and_store\` — pass texts + namespace + metadata.
+Embeddings generated FREE via BAAI/bge-small-en-v1.5 (384-dim).
+
+## Step 2: Search
+\`zerodb_semantic_search\` — pass query text, get ranked results.
+Uses HNSW indexes for sub-millisecond search.
+
+## Step 3: Generate Answer
+Pass search results as context to your LLM (via chat completions or any framework).
+
+## Example Flow
+1. zerodb_embed_and_store(texts=["doc chunk 1", "doc chunk 2"], namespace="docs")
+2. zerodb_semantic_search(query="What is the return policy?", limit=5)
+3. Pass results to LLM with retrieved context
+
+## Tips
+- Use namespaces to organize by document source
+- Batch embed: up to 100 texts per call
+- Threshold: 0.3 is good default, increase for precision
+- Metadata: attach source, page number, etc. for traceability`
+            }
+          }]
+        }
+      }
+
+      throw new Error(`Unknown prompt: ${name}`)
+    })
+  }
+
   setupHandlers () {
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params
@@ -1541,7 +1710,7 @@ class ZeroDBMCPServer {
       get_project: { method: 'GET', path: '/api/v1/projects/{project_id}' },
       update_project: { method: 'PUT', path: '/api/v1/projects/{project_id}' },
       delete_project: { method: 'DELETE', path: '/api/v1/projects/{project_id}' },
-      get_project_stats: { method: 'GET', path: '/api/v1/projects/{project_id}/stats' },
+      get_project_stats: { method: 'GET', path: '/api/v1/projects/{project_id}/usage' },
       enable_database: { method: 'POST', path: '/api/v1/projects/{project_id}/database/enable' },
 
       // RLHF
