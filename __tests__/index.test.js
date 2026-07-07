@@ -101,6 +101,8 @@ describe('ZeroDBMCPServer - Initialization', () => {
 
   test('should require ZERODB_USERNAME environment variable', () => {
     delete process.env.ZERODB_USERNAME
+    delete process.env.ZERODB_API_KEY
+    delete process.env.ZERODB_API_TOKEN
     process.env.ZERODB_PASSWORD = TEST_CONFIG.password
 
     expect(() => new ZeroDBMCPServer()).toThrow('SECURITY ERROR')
@@ -109,6 +111,8 @@ describe('ZeroDBMCPServer - Initialization', () => {
   test('should require ZERODB_PASSWORD environment variable', () => {
     process.env.ZERODB_USERNAME = TEST_CONFIG.username
     delete process.env.ZERODB_PASSWORD
+    delete process.env.ZERODB_API_KEY
+    delete process.env.ZERODB_API_TOKEN
 
     expect(() => new ZeroDBMCPServer()).toThrow('SECURITY ERROR')
   })
