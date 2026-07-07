@@ -15,6 +15,7 @@
   },
   "rules": {
     "no-console": ["warn", { "allow": ["error"] }],
-    "no-unused-vars": ["error", { "argsIgnorePattern": "^_" }]
+    "no-unused-vars": ["error", { "argsIgnorePattern": "^_" }],
+    "camelcase": ["error", { "properties": "never", "allow": ["project_id", "instance_size", "postgres_version", "credential_type", "query_type"] }]
   }
 }
