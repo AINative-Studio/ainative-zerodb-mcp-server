@@ -1,4 +1,4 @@
-# ZeroDB MCP Server v2.2.0
+# ZeroDB MCP Server v2.3.2
 
 [![npm version](https://img.shields.io/npm/v/ainative-zerodb-mcp-server.svg)](https://www.npmjs.com/package/ainative-zerodb-mcp-server)
 [![npm downloads](https://img.shields.io/npm/dm/ainative-zerodb-mcp-server.svg)](https://www.npmjs.com/package/ainative-zerodb-mcp-server)
@@ -7,17 +7,20 @@
 
 **Enterprise-grade Model Context Protocol (MCP) server providing full access to ZeroDB's vector search, quantum compression, PostgreSQL, NoSQL operations, and persistent memory for AI agents.**
 
-## 🆕 What's New in v2.2.0
+## What's New in v2.3.2
 
-- **3 New Embedding Tools** - Free embedding generation with `zerodb_generate_embeddings`, `zerodb_embed_and_store`, `zerodb_semantic_search`
-- **Multi-Dimension Support** - Use 384, 768, 1024, or 1536 dimension vectors
-- **Free Models** - BAAI/bge-small/base/large-en-v1.5 (no API costs!)
-- **151 Tests Passing** - 80.76% coverage with comprehensive TDD test suite
+- **Auth endpoint fix** — login uses `/v1/auth/login` with `email` field (was broken in v2.2.0)
+- **Execute endpoint fix** — all MCP operations route through `/v1/public/mcp` (was dead endpoint)
+- **PostgreSQL endpoint fix** — all 7 postgres management paths corrected
+- **Test env isolation fix** — 151/151 tests passing with proper env var cleanup
+- **3 Embedding Tools** (from v2.2.0) — `zerodb_generate_embeddings`, `zerodb_embed_and_store`, `zerodb_semantic_search`
+- **Multi-Dimension Support** — 384, 768, 1024, or 1536 dimension vectors
+- **Free Models** — BAAI/bge-small/base/large-en-v1.5 (no API costs)
 - **See [EMBEDDING_TOOLS_GUIDE.md](./EMBEDDING_TOOLS_GUIDE.md) for complete documentation**
 
 ## Key Features
 
-- **69 Complete Operations** - Full API coverage across all ZeroDB capabilities + new embedding tools
+- **70+ Complete Operations** - Full API coverage across all ZeroDB capabilities including embedding tools
 - **Vector Search** - Semantic similarity search with 384/768/1024/1536-dimensional embeddings
 - **Free Embeddings** - Generate embeddings with BAAI BGE models (no OpenAI costs!)
 - **Quantum Compression** - Advanced vector compression using quantum algorithms
@@ -114,10 +117,10 @@ After registration, create a project to get your `PROJECT_ID`:
 
 ```bash
 # 1. Login to get your access token
-curl -X POST 'https://api.ainative.studio/v1/public/auth/login-json' \
+curl -X POST 'https://api.ainative.studio/v1/auth/login' \
   -H 'Content-Type: application/json' \
   -d '{
-    "username": "your-email@example.com",
+    "email": "your-email@example.com",
     "password": "YourSecurePassword123!"
   }'
 ```

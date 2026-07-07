@@ -53,7 +53,7 @@ class ZeroDBMCPServer {
     this.server = new Server(
       {
         name: 'zerodb-mcp',
-        version: '2.1.0'
+        version: '2.3.2'
       },
       {
         capabilities: {

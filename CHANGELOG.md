@@ -5,6 +5,35 @@ All notable changes to the ZeroDB MCP Server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.2] - 2026-07-07
+
+### Fixed
+- **Version string**: MCP server constructor now reports `2.3.2` to clients (was stuck at `2.1.0` in published v2.3.1)
+- **README**: Fixed dead endpoint references (`login-json` → `login`), corrected operation count to 70+
+- **CHANGELOG**: Added missing v2.2.0 and v2.3.1 entries
+
+## [2.3.1] - 2026-07-07
+
+### Fixed
+- **Auth endpoint**: Changed from dead `/v1/public/auth/login-json` to working `/v1/auth/login`, field `username` to `email`
+- **Execute endpoint**: Changed from dead `/v1/public/zerodb/mcp/execute` to working `/v1/public/mcp`
+- **PostgreSQL endpoints**: Fixed 7 occurrences of `/v1/zerodb/projects/` to `/v1/projects/`
+- **Test env isolation**: Fixed 2 test failures caused by ZERODB_API_KEY env var leakage
+
+### Testing
+- 151/151 tests passing with proper env var cleanup in credential validation tests
+
+## [2.2.0] - 2026-06-28
+
+### Added
+- **3 Embedding Tools**: `zerodb_generate_embeddings`, `zerodb_embed_and_store`, `zerodb_semantic_search`
+- **Multi-Dimension Vectors**: Support for 384, 768, 1024, and 1536 dimensions
+- **Free BGE Models**: BAAI/bge-small/base/large-en-v1.5 with no API costs
+- **Embedding Tools Guide**: New documentation at EMBEDDING_TOOLS_GUIDE.md
+
+### Testing
+- 151 tests passing, 80.76% coverage
+
 ## [2.0.8] - 2025-11-09
 
 ### Fixed
