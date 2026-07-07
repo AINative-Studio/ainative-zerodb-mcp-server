@@ -148,7 +148,7 @@ describe('ZeroDBMCPServer - Authentication', () => {
 
   test('should successfully renew token with valid credentials', async () => {
     nock('https://api.ainative.studio')
-      .post('/v1/public/auth/login-json')
+      .post('/v1/auth/login')
       .reply(200, mockAuthResponse)
 
     const server = new ZeroDBMCPServer()
@@ -161,7 +161,7 @@ describe('ZeroDBMCPServer - Authentication', () => {
 
   test('should handle authentication failure with 401', async () => {
     nock('https://api.ainative.studio')
-      .post('/v1/public/auth/login-json')
+      .post('/v1/auth/login')
       .reply(401, { detail: 'Invalid credentials' })
 
     const server = new ZeroDBMCPServer()
@@ -171,7 +171,7 @@ describe('ZeroDBMCPServer - Authentication', () => {
 
   test('should handle network errors during token renewal', async () => {
     nock('https://api.ainative.studio')
-      .post('/v1/public/auth/login-json')
+      .post('/v1/auth/login')
       .replyWithError('Network error')
 
     const server = new ZeroDBMCPServer()
@@ -181,7 +181,7 @@ describe('ZeroDBMCPServer - Authentication', () => {
 
   test('should handle timeout during token renewal', async () => {
     nock('https://api.ainative.studio')
-      .post('/v1/public/auth/login-json')
+      .post('/v1/auth/login')
       .delayConnection(11000)
       .reply(200, mockAuthResponse)
 
@@ -192,7 +192,7 @@ describe('ZeroDBMCPServer - Authentication', () => {
 
   test('should use default expires_in when not provided', async () => {
     nock('https://api.ainative.studio')
-      .post('/v1/public/auth/login-json')
+      .post('/v1/auth/login')
       .reply(200, { access_token: 'test-token' })
 
     const server = new ZeroDBMCPServer()
@@ -204,7 +204,7 @@ describe('ZeroDBMCPServer - Authentication', () => {
 
   test('should renew token when token is null', async () => {
     nock('https://api.ainative.studio')
-      .post('/v1/public/auth/login-json')
+      .post('/v1/auth/login')
       .reply(200, mockAuthResponse)
 
     const server = new ZeroDBMCPServer()
@@ -217,7 +217,7 @@ describe('ZeroDBMCPServer - Authentication', () => {
 
   test('should renew token when token is expired', async () => {
     nock('https://api.ainative.studio')
-      .post('/v1/public/auth/login-json')
+      .post('/v1/auth/login')
       .reply(200, mockAuthResponse)
 
     const server = new ZeroDBMCPServer()
@@ -231,7 +231,7 @@ describe('ZeroDBMCPServer - Authentication', () => {
 
   test('should renew token when expiring in less than 5 minutes', async () => {
     nock('https://api.ainative.studio')
-      .post('/v1/public/auth/login-json')
+      .post('/v1/auth/login')
       .reply(200, mockAuthResponse)
 
     const server = new ZeroDBMCPServer()
@@ -256,7 +256,7 @@ describe('ZeroDBMCPServer - Authentication', () => {
 
   test('should handle manual token renewal success', async () => {
     nock('https://api.ainative.studio')
-      .post('/v1/public/auth/login-json')
+      .post('/v1/auth/login')
       .reply(200, mockAuthResponse)
 
     const server = new ZeroDBMCPServer()
@@ -268,7 +268,7 @@ describe('ZeroDBMCPServer - Authentication', () => {
 
   test('should handle manual token renewal failure', async () => {
     nock('https://api.ainative.studio')
-      .post('/v1/public/auth/login-json')
+      .post('/v1/auth/login')
       .reply(401, { detail: 'Invalid credentials' })
 
     const server = new ZeroDBMCPServer()
@@ -282,7 +282,7 @@ describe('ZeroDBMCPServer - Authentication', () => {
     process.env.ZERODB_API_URL = 'https://custom.api.com'
 
     nock('https://custom.api.com')
-      .post('/v1/public/auth/login-json')
+      .post('/v1/auth/login')
       .reply(200, mockAuthResponse)
 
     const server = new ZeroDBMCPServer()
@@ -293,7 +293,7 @@ describe('ZeroDBMCPServer - Authentication', () => {
 
   test('should throw error message when renewToken fails without access_token', async () => {
     nock('https://api.ainative.studio')
-      .post('/v1/public/auth/login-json')
+      .post('/v1/auth/login')
       .reply(200, { expires_in: 1800 }) // Missing access_token
 
     const server = new ZeroDBMCPServer()
@@ -316,7 +316,7 @@ describe('ZeroDBMCPServer - Execute Operation', () => {
     const server = createMockedServer()
 
     nock('https://api.ainative.studio')
-      .post('/v1/public/zerodb/mcp/execute')
+      .post('/v1/public/mcp')
       .reply(200, {
         success: true,
         result: { message: 'Operation successful' }
@@ -333,7 +333,7 @@ describe('ZeroDBMCPServer - Execute Operation', () => {
 
     let capturedRequest
     nock('https://api.ainative.studio')
-      .post('/v1/public/zerodb/mcp/execute')
+      .post('/v1/public/mcp')
       .reply(200, function (_uri, requestBody) {
         capturedRequest = requestBody
         return { success: true, result: {} }
@@ -349,7 +349,7 @@ describe('ZeroDBMCPServer - Execute Operation', () => {
 
     let capturedRequest
     nock('https://api.ainative.studio')
-      .post('/v1/public/zerodb/mcp/execute')
+      .post('/v1/public/mcp')
       .reply(200, function (_uri, requestBody) {
         capturedRequest = requestBody
         return { success: true, result: {} }
@@ -364,7 +364,7 @@ describe('ZeroDBMCPServer - Execute Operation', () => {
     const server = createMockedServer()
 
     nock('https://api.ainative.studio')
-      .post('/v1/public/zerodb/mcp/execute')
+      .post('/v1/public/mcp')
       .reply(200, {
         success: false,
         error: { message: 'Operation failed', code: 'VALIDATION_ERROR' }
@@ -380,7 +380,7 @@ describe('ZeroDBMCPServer - Execute Operation', () => {
     const server = createMockedServer()
 
     nock('https://api.ainative.studio')
-      .post('/v1/public/zerodb/mcp/execute')
+      .post('/v1/public/mcp')
       .reply(500, {
         error: { message: 'Internal server error', details: 'Database connection failed' }
       })
@@ -396,7 +396,7 @@ describe('ZeroDBMCPServer - Execute Operation', () => {
     const server = createMockedServer()
 
     nock('https://api.ainative.studio')
-      .post('/v1/public/zerodb/mcp/execute')
+      .post('/v1/public/mcp')
       .replyWithError('Network failure')
 
     const result = await server.executeOperation('test_operation', {})
@@ -409,7 +409,7 @@ describe('ZeroDBMCPServer - Execute Operation', () => {
 
     let capturedHeaders
     nock('https://api.ainative.studio')
-      .post('/v1/public/zerodb/mcp/execute')
+      .post('/v1/public/mcp')
       .reply(200, function (_uri, _requestBody) {
         capturedHeaders = this.req.headers
         return { success: true, result: {} }
@@ -424,7 +424,7 @@ describe('ZeroDBMCPServer - Execute Operation', () => {
     const server = createMockedServer()
 
     nock('https://api.ainative.studio')
-      .post('/v1/public/zerodb/mcp/execute')
+      .post('/v1/public/mcp')
       .delayConnection(31000)
       .reply(200, { success: true, result: {} })
 
@@ -437,7 +437,7 @@ describe('ZeroDBMCPServer - Execute Operation', () => {
     const server = createMockedServer()
 
     nock('https://api.ainative.studio')
-      .post('/v1/public/zerodb/mcp/execute')
+      .post('/v1/public/mcp')
       .replyWithError({ message: 'Connection timeout', code: 'ETIMEDOUT' })
 
     const result = await server.executeOperation('test_operation', {})
@@ -476,7 +476,7 @@ describe('ZeroDBMCPServer - All 60 Operations Coverage', () => {
     { name: 'optimize_vector_storage', args: {} },
     { name: 'export_vectors', args: {} },
 
-    // Quantum Operations (6)
+    // Vector Compression Operations - TurboQuant (6)
     { name: 'quantum_compress_vector', args: { vector_embedding: createTestVector() } },
     { name: 'quantum_decompress_vector', args: { compressed_vector: [] } },
     { name: 'quantum_hybrid_similarity', args: { query_vector: createTestVector() } },
@@ -547,7 +547,7 @@ describe('ZeroDBMCPServer - All 60 Operations Coverage', () => {
       const server = createMockedServer()
 
       nock('https://api.ainative.studio')
-        .post('/v1/public/zerodb/mcp/execute')
+        .post('/v1/public/mcp')
         .reply(200, {
           success: true,
           result: { operation: name, status: 'success' }
@@ -577,7 +577,7 @@ describe('ZeroDBMCPServer - Error Handling', () => {
     const server = createMockedServer()
 
     nock('https://api.ainative.studio')
-      .post('/v1/public/zerodb/mcp/execute')
+      .post('/v1/public/mcp')
       .reply(404, { error: { message: 'Not found' } })
 
     const result = await server.executeOperation('test_operation', {})
@@ -590,7 +590,7 @@ describe('ZeroDBMCPServer - Error Handling', () => {
     const server = createMockedServer()
 
     nock('https://api.ainative.studio')
-      .post('/v1/public/zerodb/mcp/execute')
+      .post('/v1/public/mcp')
       .reply(422, { error: { message: 'Validation error', details: { field: 'error' } } })
 
     const result = await server.executeOperation('test_operation', {})
@@ -602,7 +602,7 @@ describe('ZeroDBMCPServer - Error Handling', () => {
     const server = createMockedServer()
 
     nock('https://api.ainative.studio')
-      .post('/v1/public/zerodb/mcp/execute')
+      .post('/v1/public/mcp')
       .reply(429, { error: { message: 'Rate limit exceeded' } })
 
     const result = await server.executeOperation('test_operation', {})
@@ -614,7 +614,7 @@ describe('ZeroDBMCPServer - Error Handling', () => {
     const server = createMockedServer()
 
     nock('https://api.ainative.studio')
-      .post('/v1/public/zerodb/mcp/execute')
+      .post('/v1/public/mcp')
       .reply(500, { error: { message: 'Internal server error' } })
 
     const result = await server.executeOperation('test_operation', {})
@@ -626,7 +626,7 @@ describe('ZeroDBMCPServer - Error Handling', () => {
     const server = createMockedServer()
 
     nock('https://api.ainative.studio')
-      .post('/v1/public/zerodb/mcp/execute')
+      .post('/v1/public/mcp')
       .replyWithError({ code: 'ECONNREFUSED' })
 
     const result = await server.executeOperation('test_operation', {})
@@ -638,7 +638,7 @@ describe('ZeroDBMCPServer - Error Handling', () => {
     const server = createMockedServer()
 
     nock('https://api.ainative.studio')
-      .post('/v1/public/zerodb/mcp/execute')
+      .post('/v1/public/mcp')
       .delayConnection(31000)
       .reply(200, { success: true })
 
@@ -651,7 +651,7 @@ describe('ZeroDBMCPServer - Error Handling', () => {
     const server = createMockedServer()
 
     nock('https://api.ainative.studio')
-      .post('/v1/public/zerodb/mcp/execute')
+      .post('/v1/public/mcp')
       .reply(200, 'not-json')
 
     const result = await server.executeOperation('test_operation', {})
@@ -675,7 +675,7 @@ describe('ZeroDBMCPServer - Integration Tests', () => {
 
     // Store memory
     nock('https://api.ainative.studio')
-      .post('/v1/public/zerodb/mcp/execute')
+      .post('/v1/public/mcp')
       .reply(200, {
         success: true,
         result: { memory_id: 'mem-123' }
@@ -690,7 +690,7 @@ describe('ZeroDBMCPServer - Integration Tests', () => {
 
     // Search memory
     nock('https://api.ainative.studio')
-      .post('/v1/public/zerodb/mcp/execute')
+      .post('/v1/public/mcp')
       .reply(200, {
         success: true,
         result: { memories: [{ content: 'Test memory' }] }
@@ -709,7 +709,7 @@ describe('ZeroDBMCPServer - Integration Tests', () => {
 
     // Upsert vector
     nock('https://api.ainative.studio')
-      .post('/v1/public/zerodb/mcp/execute')
+      .post('/v1/public/mcp')
       .reply(200, {
         success: true,
         result: { vector_id: 'vec-123' }
@@ -724,7 +724,7 @@ describe('ZeroDBMCPServer - Integration Tests', () => {
 
     // Search vectors
     nock('https://api.ainative.studio')
-      .post('/v1/public/zerodb/mcp/execute')
+      .post('/v1/public/mcp')
       .reply(200, {
         success: true,
         result: { vectors: [{ document: 'Test document', similarity: 0.95 }] }
@@ -741,7 +741,7 @@ describe('ZeroDBMCPServer - Integration Tests', () => {
     const server = createMockedServer()
 
     nock('https://api.ainative.studio')
-      .post('/v1/public/zerodb/mcp/execute')
+      .post('/v1/public/mcp')
       .times(3)
       .reply(200, {
         success: true,
@@ -772,7 +772,7 @@ describe('ZeroDBMCPServer - Coverage Tests', () => {
     const server = createMockedServer()
 
     nock('https://api.ainative.studio')
-      .post('/v1/public/zerodb/mcp/execute')
+      .post('/v1/public/mcp')
       .reply(200, {
         success: true,
         result: { key: 'value', nested: { data: 'test' } }
@@ -789,7 +789,7 @@ describe('ZeroDBMCPServer - Coverage Tests', () => {
     const server = createMockedServer()
 
     nock('https://api.ainative.studio')
-      .post('/v1/public/zerodb/mcp/execute')
+      .post('/v1/public/mcp')
       .reply(200, {
         success: false,
         error: { message: 'Custom error', code: 'ERR_001' }
@@ -818,7 +818,7 @@ describe('ZeroDBMCPServer - Coverage Tests', () => {
 
     for (const operation of categories) {
       nock('https://api.ainative.studio')
-        .post('/v1/public/zerodb/mcp/execute')
+        .post('/v1/public/mcp')
         .reply(200, {
           success: true,
           result: { operation }
@@ -909,7 +909,7 @@ describe('ZeroDBMCPServer - Tool Routing', () => {
 
     for (const route of allRoutes) {
       nock('https://api.ainative.studio')
-        .post('/v1/public/zerodb/mcp/execute')
+        .post('/v1/public/mcp')
         .reply(200, {
           success: true,
           result: { operation: route.operation, status: 'success' }
@@ -925,7 +925,7 @@ describe('ZeroDBMCPServer - Tool Routing', () => {
     const server = createMockedServer()
 
     nock('https://api.ainative.studio')
-      .post('/v1/public/auth/login-json')
+      .post('/v1/auth/login')
       .reply(200, mockAuthResponse)
 
     const result = await server.routeToolCall('zerodb_renew_token', {})
@@ -979,7 +979,7 @@ describe('ZeroDBMCPServer - Error Paths', () => {
 
   test('should handle missing access_token in auth response', async () => {
     nock('https://api.ainative.studio')
-      .post('/v1/public/auth/login-json')
+      .post('/v1/auth/login')
       .reply(200, { expires_in: 1800 }) // Missing access_token
 
     const server = new ZeroDBMCPServer()
@@ -1004,7 +1004,7 @@ describe('ZeroDBMCPServer - Additional Coverage', () => {
     server.tokenExpiry = null
 
     nock('https://api.ainative.studio')
-      .post('/v1/public/auth/login-json')
+      .post('/v1/auth/login')
       .reply(200, mockAuthResponse)
 
     await server.ensureValidToken()
@@ -1014,7 +1014,7 @@ describe('ZeroDBMCPServer - Additional Coverage', () => {
 
   test('should handle renewToken success path', async () => {
     nock('https://api.ainative.studio')
-      .post('/v1/public/auth/login-json')
+      .post('/v1/auth/login')
       .reply(200, mockAuthResponse)
 
     const server = new ZeroDBMCPServer()
@@ -1029,7 +1029,7 @@ describe('ZeroDBMCPServer - Additional Coverage', () => {
 
     let capturedBody
     nock('https://api.ainative.studio')
-      .post('/v1/public/zerodb/mcp/execute', (body) => {
+      .post('/v1/public/mcp', (body) => {
         capturedBody = body
         return true
       })

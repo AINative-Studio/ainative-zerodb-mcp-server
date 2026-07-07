@@ -174,8 +174,7 @@ Add to your Claude Desktop configuration file:
       "env": {
         "ZERODB_API_URL": "https://api.ainative.studio",
         "ZERODB_PROJECT_ID": "your-project-id-here",
-        "ZERODB_USERNAME": "your-email@example.com",
-        "ZERODB_PASSWORD": "your-password",
+        "ZERODB_API_KEY": "your-api-key",
         "MCP_CONTEXT_WINDOW": "8192",
         "MCP_RETENTION_DAYS": "30"
       }
@@ -2174,28 +2173,34 @@ All configuration is done through environment variables. Set these in your MCP s
 |----------|----------|---------|-------------|
 | `ZERODB_API_URL` | No | `https://api.ainative.studio` | ZeroDB API base URL |
 | `ZERODB_PROJECT_ID` | **Yes** | - | Your ZeroDB project ID |
-| `ZERODB_USERNAME` | **Yes** | - | Your ZeroDB account email |
-| `ZERODB_PASSWORD` | **Yes** | - | Your ZeroDB account password |
-| `ZERODB_API_TOKEN` | No | - | Pre-existing API token (optional, will be auto-generated) |
+| `ZERODB_API_KEY` | **Recommended** | - | Your ZeroDB API key (preferred auth method) |
+| `ZERODB_USERNAME` | No* | - | **DEPRECATED** — Your ZeroDB account email. Switch to `ZERODB_API_KEY`. Will be removed in v3.0. |
+| `ZERODB_PASSWORD` | No* | - | **DEPRECATED** — Your ZeroDB account password. Switch to `ZERODB_API_KEY`. Will be removed in v3.0. |
+| `ZERODB_API_TOKEN` | No | - | Legacy alias for `ZERODB_API_KEY` |
 | `MCP_CONTEXT_WINDOW` | No | `8192` | Maximum tokens in context window |
 | `MCP_RETENTION_DAYS` | No | `30` | Memory retention period in days |
 
+\* Either `ZERODB_API_KEY` or both `ZERODB_USERNAME` and `ZERODB_PASSWORD` must be provided.
+
 ### Authentication
 
-The MCP server uses JWT authentication with automatic token renewal:
+The MCP server supports two authentication methods:
 
-1. **Initial Authentication**: On startup, the server authenticates using username/password
-2. **Token Storage**: Access token is stored in memory
-3. **Automatic Renewal**: Token is automatically renewed every 25 minutes (tokens expire after 30 minutes)
-4. **Manual Renewal**: Use `zerodb_renew_token` to manually renew if needed
+#### API Key (Recommended)
+Set `ZERODB_API_KEY` in your environment. The API key is used as a static Bearer token for all requests -- no login flow, no token renewal needed.
+
+#### Username/Password (Legacy)
+Set `ZERODB_USERNAME` and `ZERODB_PASSWORD`. The server authenticates on startup, stores the JWT in memory, and automatically renews it every 25 minutes (tokens expire after 30 minutes). Use `zerodb_renew_token` to manually renew if needed.
+
+> **Backward compatibility:** If you have `ZERODB_USERNAME`/`ZERODB_PASSWORD` configured, it will continue to work. We recommend migrating to API key auth for simplicity and security.
 
 ### Security Best Practices
 
-1. **Store credentials securely**: Use environment variables, never hardcode
-2. **Use project-specific credentials**: Create separate projects for different applications
-3. **Rotate passwords regularly**: Change passwords every 90 days
-4. **Monitor API usage**: Check for unusual activity in project stats
-5. **Limit token scope**: Use project-specific tokens when possible
+1. **Use API keys instead of passwords**: API keys don't require plaintext password storage
+2. **Store credentials securely**: Use environment variables, never hardcode
+3. **Use project-specific credentials**: Create separate projects for different applications
+4. **Rotate API keys regularly**: Regenerate keys every 90 days
+5. **Monitor API usage**: Check for unusual activity in project stats
 
 ---
 
@@ -2401,6 +2406,64 @@ try {
 
 ## Migration Guide
 
+### Migrating from Password Auth to API Key Auth
+
+> **Password auth (`ZERODB_USERNAME`/`ZERODB_PASSWORD`) is deprecated and will be removed in v3.0.**
+> The server will print a deprecation warning on startup if password auth is detected.
+
+#### Step 1: Get Your API Key
+
+1. Go to **https://ainative.studio/settings**
+2. Navigate to the **API Keys** section
+3. Click **Create API Key**
+4. Copy the key (it starts with `zdb_`)
+
+#### Step 2: Update Your Configuration
+
+**Old config (deprecated):**
+```json
+{
+  "mcpServers": {
+    "zerodb": {
+      "command": "npx",
+      "args": ["ainative-zerodb-mcp-server"],
+      "env": {
+        "ZERODB_API_URL": "https://api.ainative.studio",
+        "ZERODB_PROJECT_ID": "your-project-id",
+        "ZERODB_USERNAME": "your-email@example.com",
+        "ZERODB_PASSWORD": "YourPassword123!"
+      }
+    }
+  }
+}
+```
+
+**New config (recommended):**
+```json
+{
+  "mcpServers": {
+    "zerodb": {
+      "command": "npx",
+      "args": ["ainative-zerodb-mcp-server"],
+      "env": {
+        "ZERODB_API_URL": "https://api.ainative.studio",
+        "ZERODB_PROJECT_ID": "your-project-id",
+        "ZERODB_API_KEY": "zdb_your-api-key-here"
+      }
+    }
+  }
+}
+```
+
+#### Why Switch?
+
+- **No plaintext passwords** — API keys don't require storing your account password
+- **No token renewal** — API keys are used directly as Bearer tokens, no login/refresh flow
+- **Revocable** — Rotate or revoke individual keys without changing your password
+- **Scoped** — Future support for project-scoped and read-only keys
+
+---
+
 ### Migrating from v1.x to v2.0.0
 
 #### Breaking Changes
@@ -2504,9 +2567,10 @@ try {
 **Error**: `Authentication failed: Invalid credentials`
 
 **Solutions**:
-- Verify `ZERODB_USERNAME` and `ZERODB_PASSWORD` are correct
+- If using API key: verify `ZERODB_API_KEY` is correct and not expired
+- If using username/password: verify `ZERODB_USERNAME` and `ZERODB_PASSWORD` are correct
 - Check that your account is active
-- Try manual token renewal: `zerodb_renew_token`
+- Try manual token renewal: `zerodb_renew_token` (username/password auth only)
 
 #### 2. Project Not Found
 

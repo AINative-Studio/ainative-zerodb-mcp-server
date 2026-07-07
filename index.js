@@ -2,7 +2,7 @@
 
 const { Server } = require('@modelcontextprotocol/sdk/server/index.js')
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js')
-const { CallToolRequestSchema, ListToolsRequestSchema, ListPromptsRequestSchema, GetPromptRequestSchema } = require('@modelcontextprotocol/sdk/types.js')
+const { CallToolRequestSchema, ListToolsRequestSchema } = require('@modelcontextprotocol/sdk/types.js')
 const axios = require('axios')
 
 /**
@@ -10,7 +10,7 @@ const axios = require('axios')
  *
  * Complete implementation with ALL 76 operations across 11 categories:
  * - Vector Operations (10): upsert, batch_upsert, search, delete, get, list, stats, create_index, optimize, export
- * - Quantum Operations (6): compress, decompress, hybrid_similarity, optimize_space, feature_map, kernel_similarity
+ * - Vector Compression Operations (6): TurboQuant compress, decompress, hybrid_search, optimize, feature_map, kernel_similarity
  * - Table Operations (8): create_table, list_tables, get_table, delete_table, insert_rows, query_rows, update_rows, delete_rows
  * - File Operations (6): upload_file, download_file, list_files, delete_file, get_file_metadata, generate_presigned_url
  * - Event Operations (5): create_event, list_events, get_event, subscribe_to_events, event_stats
@@ -26,33 +26,43 @@ class ZeroDBMCPServer {
   constructor () {
     this.apiUrl = process.env.ZERODB_API_URL || 'https://api.ainative.studio'
     this.projectId = process.env.ZERODB_PROJECT_ID
-    this.apiToken = process.env.ZERODB_API_TOKEN
+    // Support ZERODB_API_KEY (recommended) or ZERODB_API_TOKEN (legacy)
+    this.apiToken = process.env.ZERODB_API_KEY || process.env.ZERODB_API_TOKEN
     this.username = process.env.ZERODB_USERNAME
     this.password = process.env.ZERODB_PASSWORD
     this.contextWindow = parseInt(process.env.MCP_CONTEXT_WINDOW || '8192')
     this.retentionDays = parseInt(process.env.MCP_RETENTION_DAYS || '30')
     this.tokenExpiry = null
 
-    // Security: Validate required credentials
-    if (!this.username || !this.password) {
-      throw new Error('SECURITY ERROR: ZERODB_USERNAME and ZERODB_PASSWORD environment variables are required. Do not hardcode credentials.')
+    // Security: Validate required credentials - API key/token OR username/password
+    this.useStaticToken = !!this.apiToken && (!this.username || !this.password)
+    if (!this.apiToken && (!this.username || !this.password)) {
+      throw new Error('SECURITY ERROR: ZERODB_API_KEY (recommended), ZERODB_API_TOKEN, or ZERODB_USERNAME and ZERODB_PASSWORD environment variables are required. Do not hardcode credentials.')
+    }
+
+    // Deprecation warning for username/password auth
+    if (!this.useStaticToken && this.username && this.password) {
+      console.error('')
+      console.error('\u26a0\ufe0f  DEPRECATION WARNING: ZERODB_USERNAME/ZERODB_PASSWORD authentication is deprecated.')
+      console.error('    Please switch to ZERODB_API_KEY for improved security.')
+      console.error('    Get your API key at: https://ainative.studio/settings')
+      console.error('    Password auth will be removed in zerodb-mcp v3.0.')
+      console.error('')
     }
 
     this.server = new Server(
       {
         name: 'zerodb-mcp',
-        version: '2.3.0'
+        version: '2.1.0'
       },
       {
         capabilities: {
-          tools: {},
-          prompts: {}
+          tools: {}
         }
       }
     )
 
     this.setupTools()
-    this.setupPrompts()
     this.setupHandlers()
     this.setupTokenRenewal()
   }
@@ -86,7 +96,8 @@ class ZeroDBMCPServer {
         // ==================== EMBEDDING OPERATIONS (3) ====================
         {
           name: 'zerodb_generate_embeddings',
-          description: 'Generate embeddings using specified model (384/768/1024 dimensions). Supports BAAI/bge-small-en-v1.5 (384-dim, default), BAAI/bge-base-en-v1.5 (768-dim), BAAI/bge-large-en-v1.5 (1024-dim)',
+          description: 'Generate embeddings using specified model (384/768/1024 dimensions). Supports BAAI/bge-small-en-v1.5 (384-dim, default), BAAI/bge-base-en-v1.5 (768-dim), BAAI/bge-large-en-v1.5 (1024-dim). Use when you need raw embedding vectors without storing them. Does not persist data — for embed + store in one step, use zerodb_embed_and_store instead.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -107,7 +118,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_embed_and_store',
-          description: 'Generate embeddings and store in ZeroDB in one step. Auto-detects dimension based on model and routes to correct storage.',
+          description: 'Generate embeddings and store in ZeroDB in one step. Auto-detects dimension based on model and routes to correct storage. Use when you want to embed text and persist the vectors in a single call. Combines zerodb_generate_embeddings + zerodb_upsert_vector.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -137,7 +149,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_semantic_search',
-          description: 'Semantic search using text query (auto-embeds query text). Searches vectors in the same dimension as the model used.',
+          description: 'Semantic search using text query (auto-embeds query text). Searches vectors in the same dimension as the model used. Use when searching vectors using a text query (auto-embeds the text). Unlike zerodb_search_vectors which requires a raw vector, this accepts plain text. Unlike zerodb_search_memory which searches agent conversation memory, this searches the general vector store.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -178,7 +191,8 @@ class ZeroDBMCPServer {
         // ==================== MEMORY OPERATIONS (3) ====================
         {
           name: 'zerodb_store_memory',
-          description: 'Store agent memory in ZeroDB for persistent context',
+          description: 'Store agent memory in ZeroDB for persistent context. Use when the agent needs to persist conversation turns, decisions, or observations for later recall. Stores with role, session, and agent metadata for filtered retrieval.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -193,7 +207,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_search_memory',
-          description: 'Search agent memory using semantic similarity',
+          description: 'Search agent memory using semantic similarity. Use when searching agent conversation memory by natural language. Unlike zerodb_search_vectors which requires a raw vector, and zerodb_semantic_search which searches the general vector store, this searches agent-specific memory entries filtered by session/agent/role.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -208,7 +223,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_get_context',
-          description: 'Get agent context window for current session',
+          description: 'Get agent context window for current session. Use when the agent needs to retrieve its recent conversation context within token limits. Returns the most recent memories for a session, bounded by max_tokens.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -223,7 +239,8 @@ class ZeroDBMCPServer {
         // ==================== VECTOR OPERATIONS (10) ====================
         {
           name: 'zerodb_upsert_vector',
-          description: 'Store or update a vector embedding with metadata. Supports 384, 768, 1024, or 1536 dimensions. Dimension is auto-detected and validated.',
+          description: 'Store or update a vector embedding with metadata. Supports 384, 768, 1024, or 1536 dimensions. Dimension is auto-detected and validated. Use when you have a pre-computed embedding vector to store or update. For embedding text and storing in one step, use zerodb_embed_and_store instead.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -242,7 +259,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_batch_upsert_vectors',
-          description: 'Batch upsert multiple vectors for efficiency',
+          description: 'Batch upsert multiple vectors for efficiency. Use when storing many vectors at once to reduce API round-trips. Accepts an array of vector objects and processes them in a single request.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -267,7 +285,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_search_vectors',
-          description: 'Search vectors using semantic similarity. Supports 384, 768, 1024, or 1536 dimension query vectors. Auto-detects dimension.',
+          description: 'Search vectors using semantic similarity. Supports 384, 768, 1024, or 1536 dimension query vectors. Auto-detects dimension. Use when searching raw vector embeddings by similarity with a query vector. Unlike zerodb_semantic_search which accepts text (auto-embeds), this requires a pre-computed vector. Unlike zerodb_search_memory which searches agent memory, this searches the general vector store.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -286,7 +305,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_delete_vector',
-          description: 'Delete a specific vector by ID',
+          description: 'Delete a specific vector by ID. Use when removing a single vector embedding from the store. WARNING: This operation is irreversible.',
+          annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -298,7 +318,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_get_vector',
-          description: 'Retrieve a specific vector by ID',
+          description: 'Retrieve a specific vector by ID. Use when you need to inspect a particular vector\'s metadata or embedding values. Optionally includes the full embedding array.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -311,7 +332,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_list_vectors',
-          description: 'List vectors in a project/namespace with pagination',
+          description: 'List vectors in a project/namespace with pagination. Use when the agent needs to browse or enumerate stored vectors, or answer "what vectors exist?". Supports filtering by namespace and metadata.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -325,7 +347,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_vector_stats',
-          description: 'Get vector statistics for a project',
+          description: 'Get vector statistics for a project. Use when checking how many vectors are stored, their dimensions, and namespace distribution. Returns counts, dimension breakdowns, and optionally detailed statistics.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -337,7 +360,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_create_vector_index',
-          description: 'Create optimized index for vector search',
+          description: 'Create optimized index for vector search. Use when search performance needs improvement on large vector collections. Supports IVF, HNSW, and flat index types with configurable distance metrics.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -351,7 +375,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_optimize_vectors',
-          description: 'Optimize vector storage for better performance',
+          description: 'Optimize vector storage for better performance. Use when vector search is slow or storage needs compaction. Supports compress, reindex, and deduplicate operations. Use dry_run to preview changes first.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -364,7 +389,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_export_vectors',
-          description: 'Export vectors to various formats (JSON, CSV, Parquet)',
+          description: 'Export vectors to various formats (JSON, CSV, Parquet). Use when you need to download or migrate vector data out of ZeroDB. Supports filtering by namespace and metadata.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -377,27 +403,31 @@ class ZeroDBMCPServer {
           }
         },
 
-        // ==================== QUANTUM OPERATIONS (6) ====================
+        // ==================== VECTOR COMPRESSION OPERATIONS (6) - TurboQuant ====================
         {
           name: 'zerodb_quantum_compress',
-          description: 'Apply quantum-inspired compression to vector (reduces dimensionality)',
+          description: 'Compress vector using TurboQuant (PolarQuant + QJL) algorithm from Google Research (ICLR 2026). Achieves ~3.5x compression with 0.9999+ cosine similarity preservation. Data-oblivious — no calibration needed. Returns base64-encoded compressed data.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
-              vector_embedding: { type: 'array', items: { type: 'number' }, description: 'Vector to compress' },
-              compression_ratio: { type: 'number', description: 'Target compression ratio (0.0-1.0)', default: 0.5 },
-              preserve_similarity: { type: 'boolean', description: 'Preserve similarity relationships', default: true }
+              vector_embedding: { type: 'array', items: { type: 'number' }, description: 'Vector to compress (1-4096 dimensions)' },
+              compression_ratio: { type: 'number', description: 'Ignored (kept for backward compat). Actual ratio is determined by precision.', default: 0.5 },
+              preserve_similarity: { type: 'boolean', description: 'Use TurboQuant (true) or PolarQuant-only (false)', default: true },
+              precision: { type: 'number', description: 'Bit precision for radius quantization (8=3.5x, 16=2.4x, 32=highest fidelity)', default: 16 },
+              method: { type: 'string', enum: ['turboquant', 'polarquant', 'qjl'], description: 'Algorithm: turboquant (PolarQuant+QJL), polarquant (PolarQuant only), qjl (sign-bit only)', default: 'turboquant' }
             },
             required: ['vector_embedding']
           }
         },
         {
           name: 'zerodb_quantum_decompress',
-          description: 'Decompress quantum-compressed vector back to original dimensions',
+          description: 'Decompress a TurboQuant-compressed vector back to original dimensions. Reconstructs the full vector from the base64-encoded compressed data returned by zerodb_quantum_compress.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
-              compressed_vector: { type: 'array', items: { type: 'number' }, description: 'Compressed vector' },
+              compressed_vector: { type: 'array', items: { type: 'number' }, description: 'Compressed vector data' },
               original_dimensions: { type: 'number', description: 'Original vector dimensions', default: 1536 },
               compression_metadata: { type: 'object', description: 'Compression metadata from compress operation' }
             },
@@ -406,14 +436,15 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_quantum_hybrid_search',
-          description: 'Hybrid similarity search using quantum enhancement',
+          description: 'Hybrid similarity search combining cosine similarity with metadata boosting. Returns ranked results with configurable weighting between similarity score and metadata relevance.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
               query_vector: { type: 'array', items: { type: 'number' }, description: 'Query vector' },
               namespace: { type: 'string', description: 'Vector namespace' },
-              quantum_weight: { type: 'number', description: 'Quantum similarity weight (0.0-1.0)', default: 0.3 },
-              classical_weight: { type: 'number', description: 'Classical similarity weight (0.0-1.0)', default: 0.7 },
+              quantum_weight: { type: 'number', description: 'Metadata boost weight (0.0-1.0)', default: 0.3 },
+              classical_weight: { type: 'number', description: 'Cosine similarity weight (0.0-1.0)', default: 0.7 },
               limit: { type: 'number', description: 'Max results', default: 10 }
             },
             required: ['query_vector']
@@ -421,26 +452,28 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_quantum_optimize',
-          description: 'Optimize quantum circuits for project vectors',
+          description: 'Analyze vector space characteristics for optimal TurboQuant compression settings. Reports sparsity, magnitude distribution, and recommended precision level.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
-              namespace: { type: 'string', description: 'Namespace to optimize' },
-              optimization_level: { type: 'number', description: 'Optimization level (1-3)', default: 2 },
-              target_backend: { type: 'string', enum: ['simulator', 'ionq', 'rigetti'], description: 'Target quantum backend', default: 'simulator' }
+              namespace: { type: 'string', description: 'Namespace to analyze' },
+              optimization_level: { type: 'number', description: 'Analysis depth (1-3)', default: 2 },
+              target_backend: { type: 'string', enum: ['simulator', 'ionq', 'rigetti'], description: 'Target backend (simulator recommended)', default: 'simulator' }
             },
             required: []
           }
         },
         {
           name: 'zerodb_quantum_feature_map',
-          description: 'Apply quantum feature mapping to vector',
+          description: 'Transform vector into feature space for enhanced similarity computation. Applies configurable feature mapping for dimensionality transformation.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
               vector_embedding: { type: 'array', items: { type: 'number' }, description: 'Input vector' },
               feature_map_type: { type: 'string', enum: ['zz', 'pauli', 'custom'], description: 'Feature map type', default: 'zz' },
-              num_qubits: { type: 'number', description: 'Number of qubits to use', default: 10 },
+              num_qubits: { type: 'number', description: 'Dimensionality parameter', default: 10 },
               reps: { type: 'number', description: 'Number of repetitions', default: 2 }
             },
             required: ['vector_embedding']
@@ -448,14 +481,15 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_quantum_kernel',
-          description: 'Calculate quantum kernel similarity between vectors',
+          description: 'Calculate kernel similarity between two vectors. Supports fidelity (normalized dot product squared) and swap_test kernel types for measuring vector similarity.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
               vector_a: { type: 'array', items: { type: 'number' }, description: 'First vector' },
               vector_b: { type: 'array', items: { type: 'number' }, description: 'Second vector' },
               kernel_type: { type: 'string', enum: ['fidelity', 'swap_test'], description: 'Kernel type', default: 'fidelity' },
-              shots: { type: 'number', description: 'Number of quantum shots', default: 1024 }
+              shots: { type: 'number', description: 'Number of iterations', default: 1024 }
             },
             required: ['vector_a', 'vector_b']
           }
@@ -464,7 +498,8 @@ class ZeroDBMCPServer {
         // ==================== TABLE/NoSQL OPERATIONS (8) ====================
         {
           name: 'zerodb_create_table',
-          description: 'Create a new NoSQL table with schema',
+          description: 'Create a new NoSQL table with schema. Use when you need to set up a new data structure for storing structured records. Define fields and indexes for the table schema.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -484,7 +519,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_list_tables',
-          description: 'List all tables in the project',
+          description: 'List all NoSQL tables in the project with their schemas. Use when the agent needs to discover available data structures or answer "what tables exist?". Returns table names, row counts, and field definitions.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -496,7 +532,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_get_table',
-          description: 'Get table details and schema',
+          description: 'Get table details and schema. Use when you need to inspect a specific table\'s structure, field types, indexes, and optionally row count statistics.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -508,7 +545,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_delete_table',
-          description: 'Delete a table and all its data',
+          description: 'Delete a table and all its data. Use when a table is no longer needed and should be permanently removed. Requires confirm flag. WARNING: This operation is irreversible.',
+          annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -520,7 +558,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_insert_rows',
-          description: 'Insert rows into a table',
+          description: 'Insert rows into a table. Use when adding new records to a NoSQL table. Accepts an array of row objects and optionally returns inserted IDs.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -533,7 +572,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_query_rows',
-          description: 'Query rows from a table with filters',
+          description: 'Query rows from a table with filters. Use when reading data from a NoSQL table. Supports MongoDB-style filters, sorting, pagination, and field projection.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -549,7 +589,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_update_rows',
-          description: 'Update rows in a table',
+          description: 'Update rows in a table. Use when modifying existing records in a NoSQL table. Supports MongoDB-style update operators ($set, $inc, etc.) and optional upsert behavior.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -563,7 +604,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_delete_rows',
-          description: 'Delete rows from a table',
+          description: 'Delete rows from a table matching a filter. Use when removing specific records from a NoSQL table. Supports MongoDB-style filters. WARNING: This operation is irreversible.',
+          annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -578,7 +620,8 @@ class ZeroDBMCPServer {
         // ==================== FILE OPERATIONS (6) ====================
         {
           name: 'zerodb_upload_file',
-          description: 'Upload file to ZeroDB storage',
+          description: 'Upload file to ZeroDB storage. Use when you need to store a file (base64-encoded) in the project\'s S3-compatible object storage. Supports metadata and virtual folder organization.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -593,7 +636,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_download_file',
-          description: 'Download file from ZeroDB storage',
+          description: 'Download file from ZeroDB storage. Use when you need to retrieve a previously uploaded file by its ID. Returns base64-encoded content by default.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -605,7 +649,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_list_files',
-          description: 'List files in project storage',
+          description: 'List files in project storage. Use when the agent needs to discover available files or answer "what files are stored?". Supports filtering by folder and MIME type with pagination.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -619,7 +664,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_delete_file',
-          description: 'Delete file from storage',
+          description: 'Delete file from storage. Use when a file is no longer needed and should be permanently removed. WARNING: This operation is irreversible.',
+          annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -630,7 +676,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_get_file_metadata',
-          description: 'Get file metadata without downloading content',
+          description: 'Get file metadata without downloading content. Use when you need to check a file\'s size, type, upload date, or custom metadata without fetching the actual file data.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -641,7 +688,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_generate_presigned_url',
-          description: 'Generate presigned URL for file access',
+          description: 'Generate presigned URL for file access. Use when you need a temporary URL to share file access with external systems. Supports download and upload operations with configurable expiration.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -656,7 +704,8 @@ class ZeroDBMCPServer {
         // ==================== EVENT OPERATIONS (5) ====================
         {
           name: 'zerodb_create_event',
-          description: 'Create an event in the event stream',
+          description: 'Create an event in the event stream. Use when you need to publish an event for tracking, auditing, or triggering downstream workflows. Supports event types, payloads, and correlation IDs.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -670,7 +719,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_list_events',
-          description: 'List events with filtering',
+          description: 'List events with filtering. Use when you need to browse or query the event stream by type, source, or time range. Supports pagination for large result sets.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -686,7 +736,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_get_event',
-          description: 'Get event details by ID',
+          description: 'Get event details by ID. Use when you need to inspect a specific event\'s full payload, timestamps, and metadata.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -697,7 +748,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_subscribe_events',
-          description: 'Subscribe to event stream (returns subscription ID)',
+          description: 'Subscribe to event stream (returns subscription ID). Use when you need to set up real-time event notifications. Supports filtering by event type and optional webhook delivery.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -710,7 +762,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_event_stats',
-          description: 'Get event stream statistics',
+          description: 'Get event stream statistics. Use when you need to understand event volume, frequency, and distribution over time. Supports filtering by event type and time range.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -724,7 +777,8 @@ class ZeroDBMCPServer {
         // ==================== PROJECT OPERATIONS (7) ====================
         {
           name: 'zerodb_create_project',
-          description: 'Create a new ZeroDB project',
+          description: 'Create a new ZeroDB project. Use when you need to set up a new isolated workspace for storing vectors, tables, files, and events. Projects are the top-level organizational unit.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -737,7 +791,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_get_project',
-          description: 'Get project details',
+          description: 'Get project details. Use when you need to inspect a project\'s configuration, settings, and enabled features. Uses the configured project ID by default.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -748,7 +803,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_list_projects',
-          description: 'List all accessible projects',
+          description: 'List all accessible projects. Use when the agent needs to discover available projects or answer "what projects do I have access to?". Returns project names, IDs, and basic info.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -760,7 +816,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_update_project',
-          description: 'Update project settings',
+          description: 'Update project settings. Use when you need to modify a project\'s name, description, or configuration settings.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -774,7 +831,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_delete_project',
-          description: 'Delete a project and all its data',
+          description: 'Delete a project and all its data. Use when a project is no longer needed. Removes all vectors, tables, files, and events within the project. Requires confirm flag. WARNING: This operation is irreversible.',
+          annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -786,7 +844,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_get_project_stats',
-          description: 'Get project usage statistics',
+          description: 'Get project usage statistics. Use when you need to check storage consumption, vector counts, API call volumes, and other usage metrics for a project.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -798,7 +857,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_enable_database',
-          description: 'Enable database features for a project',
+          description: 'Enable database features for a project. Use when you need to activate specific capabilities (vectors, compression, nosql, files, events) on a project that does not yet have them enabled.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -816,7 +876,8 @@ class ZeroDBMCPServer {
         // ==================== RLHF OPERATIONS (10) ====================
         {
           name: 'zerodb_rlhf_interaction',
-          description: 'Collect user interaction for RLHF training',
+          description: 'Collect user interaction for RLHF training. Use when recording a prompt-response pair with optional feedback score for reinforcement learning. Each call creates a new training data point.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -831,7 +892,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_rlhf_agent_feedback',
-          description: 'Collect agent-level feedback',
+          description: 'Collect agent-level feedback. Use when recording user satisfaction signals (thumbs up/down, ratings) for a specific agent. Useful for tracking agent quality over time.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -846,7 +908,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_rlhf_workflow',
-          description: 'Collect workflow-level feedback',
+          description: 'Collect workflow-level feedback. Use when recording the outcome of a multi-step workflow including success status, duration, and steps completed.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -861,7 +924,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_rlhf_error',
-          description: 'Collect error report for RLHF improvement',
+          description: 'Collect error report for RLHF improvement. Use when recording errors encountered during agent operation to improve future behavior. Include sanitized stack traces and severity levels.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -876,7 +940,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_rlhf_status',
-          description: 'Get RLHF collection status',
+          description: 'Get RLHF collection status. Use when you need to check whether RLHF data collection is active and how many interactions have been recorded for a session.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -887,7 +952,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_rlhf_summary',
-          description: 'Get RLHF data summary and statistics',
+          description: 'Get RLHF data summary and statistics. Use when you need an overview of collected RLHF data including interaction counts, average feedback scores, and trends over time.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -899,7 +965,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_rlhf_start',
-          description: 'Start RLHF data collection for session',
+          description: 'Start RLHF data collection for session. Use when initiating RLHF tracking at the beginning of an agent session. Safe to call multiple times — idempotent for the same session.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -911,7 +978,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_rlhf_stop',
-          description: 'Stop RLHF data collection for session',
+          description: 'Stop RLHF data collection for session. Use when ending RLHF tracking at the end of an agent session. Optionally exports collected data before stopping.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -923,7 +991,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_rlhf_session',
-          description: 'Get RLHF interactions for a session',
+          description: 'Get RLHF interactions for a session. Use when reviewing all recorded interactions within a specific RLHF session for analysis or export.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -935,7 +1004,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_rlhf_broadcast',
-          description: 'Broadcast RLHF event to subscribers',
+          description: 'Broadcast RLHF event to subscribers. Use when sending RLHF-related notifications to specific agents or all subscribers. Supports targeted delivery to specific agent IDs.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -950,7 +1020,8 @@ class ZeroDBMCPServer {
         // ==================== ADMIN OPERATIONS (5) ====================
         {
           name: 'zerodb_admin_system_stats',
-          description: 'Get system-wide statistics (admin only)',
+          description: 'Get system-wide statistics (admin only). Use when you need a global view of platform performance and usage metrics. Requires admin privileges.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -962,7 +1033,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_admin_list_projects',
-          description: 'List all projects system-wide (admin only)',
+          description: 'List all projects system-wide (admin only). Use when you need to see all projects across all users for administrative purposes. Supports filtering by user ID. Requires admin privileges.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -975,7 +1047,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_admin_user_usage',
-          description: 'Get user usage statistics (admin only)',
+          description: 'Get user usage statistics (admin only). Use when you need to inspect a specific user\'s resource consumption and API usage. Requires admin privileges.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -987,7 +1060,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_admin_health',
-          description: 'Get system health status (admin only)',
+          description: 'Get system health status (admin only). Use when you need to check the health of all system components (database, storage, search). Requires admin privileges.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -998,7 +1072,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_admin_optimize',
-          description: 'Run database optimization (admin only)',
+          description: 'Run database optimization (admin only). Use when the database needs maintenance such as vacuum, reindex, or analyze operations. Supports dry_run to preview changes. Requires admin privileges.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -1013,7 +1088,8 @@ class ZeroDBMCPServer {
         // ==================== POSTGRESQL OPERATIONS (6) ====================
         {
           name: 'zerodb_postgres_query',
-          description: 'Execute SQL query on provisioned PostgreSQL instance with security validations',
+          description: 'Execute SQL query on provisioned PostgreSQL instance with security validations. Use when you need to run arbitrary SQL (SELECT, INSERT, UPDATE, DELETE) against the dedicated PostgreSQL database. Supports parameterized queries and read-only mode enforcement.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -1028,7 +1104,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_postgres_schema_info',
-          description: 'Get database schema information (tables, columns, indexes)',
+          description: 'Get database schema information (tables, columns, indexes). Use when you need to discover or inspect the PostgreSQL schema structure. Returns table definitions, column types, indexes, and constraints.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -1042,7 +1119,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_postgres_create_table',
-          description: 'Create new table with schema definition',
+          description: 'Create new PostgreSQL table with schema definition. Use when you need to define a new relational table with typed columns, constraints, and indexes. Supports if_not_exists for idempotent creation.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -1083,7 +1161,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_postgres_backup',
-          description: 'Trigger PostgreSQL backup job',
+          description: 'Trigger PostgreSQL backup job. Use when you need to create a point-in-time backup of the database. Supports full and incremental backups with configurable retention and compression.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -1098,7 +1177,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_postgres_restore',
-          description: 'Restore PostgreSQL database from backup',
+          description: 'Restore PostgreSQL database from backup. Use when you need to recover data from a previous backup. Supports full, schema-only, and data-only restore types. WARNING: This operation is irreversible — it overwrites existing data when confirm_overwrite is true.',
+          annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -1112,7 +1192,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_postgres_stats',
-          description: 'Get PostgreSQL database statistics (size, connections, query performance)',
+          description: 'Get PostgreSQL database statistics (size, connections, query performance). Use when you need to monitor database health, connection pool usage, storage consumption, and query performance metrics.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -1129,7 +1210,8 @@ class ZeroDBMCPServer {
         // ==================== DEDICATED POSTGRESQL MANAGEMENT (7) ====================
         {
           name: 'zerodb_provision_postgres',
-          description: 'Provision a dedicated PostgreSQL instance via Railway with dedicated resources',
+          description: 'Provision a dedicated PostgreSQL instance via Railway with dedicated resources. Use when you need to spin up a new managed PostgreSQL database. Choose instance size based on workload requirements and budget.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -1158,7 +1240,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_get_postgres_status',
-          description: 'Get status and health metrics for dedicated PostgreSQL instance',
+          description: 'Get status and health metrics for dedicated PostgreSQL instance. Use when you need to check if your PostgreSQL instance is running, its uptime, and health indicators.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -1169,7 +1252,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_get_postgres_connection',
-          description: 'Get connection credentials for PostgreSQL instance (database_url, host, port, etc.)',
+          description: 'Get connection credentials for PostgreSQL instance (database_url, host, port, etc.). Use when you need connection details to configure applications or tools. Supports primary, readonly, and admin credential types.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -1186,7 +1270,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_get_postgres_usage',
-          description: 'Get usage statistics and billing information for PostgreSQL instance',
+          description: 'Get usage statistics and billing information for PostgreSQL instance. Use when you need to review compute usage, storage consumption, and cost breakdown for your dedicated instance.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -1202,7 +1287,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_get_postgres_logs',
-          description: 'Get SQL query logs with performance metrics and credit consumption',
+          description: 'Get SQL query logs with performance metrics and credit consumption. Use when you need to audit queries, debug slow operations, or review credit usage. Supports filtering by query type.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -1223,7 +1309,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_restart_postgres',
-          description: 'Restart the dedicated PostgreSQL instance (completes in 30-60 seconds)',
+          description: 'Restart the dedicated PostgreSQL instance (completes in 30-60 seconds). Use when the instance needs a restart due to configuration changes or performance issues. Does not lose data.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -1234,7 +1321,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_delete_postgres',
-          description: 'Delete the PostgreSQL instance and all data (requires confirmation)',
+          description: 'Delete the PostgreSQL instance and all data (requires confirmation). Use when the instance is no longer needed. Requires confirm=true. WARNING: This operation is irreversible.',
+          annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
@@ -1251,7 +1339,8 @@ class ZeroDBMCPServer {
         // ==================== UTILITY OPERATIONS (1) ====================
         {
           name: 'zerodb_renew_token',
-          description: 'Manually renew authentication token',
+          description: 'Manually renew authentication token. Use when the current auth token has expired or is about to expire and you need to force a refresh before the next API call.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {},
@@ -1303,7 +1392,7 @@ class ZeroDBMCPServer {
       case 'zerodb_export_vectors':
         return await this.executeOperation('export_vectors', args)
 
-        // Quantum Operations
+        // Vector Compression Operations (TurboQuant)
       case 'zerodb_quantum_compress':
         return await this.executeOperation('quantum_compress_vector', args)
       case 'zerodb_quantum_decompress':
@@ -1450,177 +1539,6 @@ class ZeroDBMCPServer {
     }
   }
 
-  /**
-   * MCP Prompts — provide LLMs with structured instructions for using ZeroDB.
-   * These are discoverable via prompts/list and give agents the DX context
-   * they need to use the server effectively.
-   */
-  setupPrompts () {
-    this.server.setRequestHandler(ListPromptsRequestSchema, async () => ({
-      prompts: [
-        {
-          name: 'zerodb-quickstart',
-          title: 'ZeroDB Quick Start Guide',
-          description: 'How to use ZeroDB MCP server — start here. Explains the project model, authentication, and recommended tool usage order.',
-        },
-        {
-          name: 'zerodb-memory-guide',
-          title: 'Memory Operations Guide',
-          description: 'How to store, search, and manage persistent agent memory in ZeroDB.',
-        },
-        {
-          name: 'zerodb-rag-guide',
-          title: 'RAG Pipeline Guide',
-          description: 'How to build a Retrieval Augmented Generation pipeline with ZeroDB embeddings and semantic search.',
-        },
-      ]
-    }))
-
-    this.server.setRequestHandler(GetPromptRequestSchema, async (request) => {
-      const { name } = request.params
-
-      if (name === 'zerodb-quickstart') {
-        return {
-          description: 'ZeroDB Quick Start — The Persistent Knowledge Layer for AI Agents',
-          messages: [{
-            role: 'user',
-            content: {
-              type: 'text',
-              text: `# ZeroDB MCP Server — Quick Start Guide
-
-## What is ZeroDB?
-The persistent knowledge layer for AI agents. Memory, search, storage, and free embeddings in one product.
-
-## How This MCP Server Works
-Every operation requires a **project_id**. Your project ID is: ${this.projectId || 'NOT SET — use zerodb_list_projects or zerodb_create_project first'}
-
-## Recommended Workflow
-
-### Step 1: Check your project
-Use \`zerodb_get_project\` to verify your project exists and see its configuration.
-
-### Step 2: Store data
-- **Memory**: \`zerodb_store_memory\` — store facts, preferences, conversation context
-- **Vectors**: \`zerodb_upsert_vector\` — store raw vector embeddings
-- **Tables**: \`zerodb_create_table\` + \`zerodb_insert_rows\` — structured data
-- **Files**: \`zerodb_upload_file\` — images, documents, media
-
-### Step 3: Search & retrieve
-- **Semantic search**: \`zerodb_semantic_search\` — find by meaning (FREE embeddings)
-- **Memory search**: \`zerodb_search_memory\` — search stored memories
-- **Vector search**: \`zerodb_search_vectors\` — raw vector similarity
-- **Table query**: \`zerodb_query_rows\` — structured data queries
-
-### Step 4: Generate embeddings (FREE)
-\`zerodb_generate_embeddings\` — BAAI/bge-small-en-v1.5 (384-dim), no OpenAI costs.
-
-## Requirements
-- For the best experience, use a model with 1M+ context window (e.g., Claude Opus, Gemini Pro)
-- The MCP server exposes 66 tools with detailed schemas — large context helps
-
-## Key Facts
-- Embeddings are FREE (powered by TEI)
-- project_id is required for most operations
-- Memory operations (\`store_memory\`, \`search_memory\`) work without project_id
-- All data is persistent across sessions
-- 77 tools available across 11 categories
-
-## Tool Categories
-- Embeddings (3): generate, embed+store, semantic search
-- Memory (3): store, search, get context
-- Vectors (10): CRUD + search + optimize + export
-- Tables (8): CRUD + query + update
-- Files (6): upload, download, list, delete, presigned URLs
-- Events (5): create, list, get, subscribe, stats
-- Projects (7): CRUD + stats + enable database
-- PostgreSQL (13): direct SQL, schema, backup/restore
-- Quantum (6): compress, decompress, hybrid search
-- RLHF (10): feedback collection, sessions, workflows
-- Admin (5): stats, health, optimize`
-            }
-          }]
-        }
-      }
-
-      if (name === 'zerodb-memory-guide') {
-        return {
-          description: 'ZeroDB Memory Operations — Persistent Agent Memory',
-          messages: [{
-            role: 'user',
-            content: {
-              type: 'text',
-              text: `# ZeroDB Memory Guide
-
-## Storing Memories
-Use \`zerodb_store_memory\` with:
-- content: The memory text (e.g., "User prefers dark mode")
-- role: "user", "assistant", or "system"
-- tags: Optional categorization (e.g., ["preference", "ui"])
-- session_id: Group memories by conversation
-
-## Searching Memories
-Use \`zerodb_search_memory\` with:
-- query: Natural language search (e.g., "What does the user prefer?")
-- limit: Max results (default: 10)
-- session_id: Optional scope to specific conversation
-
-## Getting Context
-Use \`zerodb_get_context\` to retrieve the full conversation context for a session.
-Useful for building context windows for LLM calls.
-
-## Embedding + Store (Combined)
-Use \`zerodb_embed_and_store\` to embed text and store as a vector in one step.
-Embeddings are FREE — no OpenAI key needed.
-
-## Tips
-- Store important facts as memories, not just chat history
-- Use tags to categorize: ["preference", "fact", "instruction"]
-- Search returns results ranked by semantic similarity
-- Memories persist across sessions — your agent never forgets`
-            }
-          }]
-        }
-      }
-
-      if (name === 'zerodb-rag-guide') {
-        return {
-          description: 'ZeroDB RAG Pipeline — Retrieval Augmented Generation',
-          messages: [{
-            role: 'user',
-            content: {
-              type: 'text',
-              text: `# ZeroDB RAG Pipeline Guide
-
-## Step 1: Ingest Documents
-\`zerodb_embed_and_store\` — pass texts + namespace + metadata.
-Embeddings generated FREE via BAAI/bge-small-en-v1.5 (384-dim).
-
-## Step 2: Search
-\`zerodb_semantic_search\` — pass query text, get ranked results.
-Uses HNSW indexes for sub-millisecond search.
-
-## Step 3: Generate Answer
-Pass search results as context to your LLM (via chat completions or any framework).
-
-## Example Flow
-1. zerodb_embed_and_store(texts=["doc chunk 1", "doc chunk 2"], namespace="docs")
-2. zerodb_semantic_search(query="What is the return policy?", limit=5)
-3. Pass results to LLM with retrieved context
-
-## Tips
-- Use namespaces to organize by document source
-- Batch embed: up to 100 texts per call
-- Threshold: 0.3 is good default, increase for precision
-- Metadata: attach source, page number, etc. for traceability`
-            }
-          }]
-        }
-      }
-
-      throw new Error(`Unknown prompt: ${name}`)
-    })
-  }
-
   setupHandlers () {
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params
@@ -1645,204 +1563,62 @@ Pass search results as context to your LLM (via chat completions or any framewor
   }
 
   /**
-   * REST endpoint routing table.
-   * Maps operation names to {method, path} for direct REST calls.
-   * Replaces the deprecated /mcp/execute wrapper (410 Gone since 2026-01-08).
-   *
-   * Path placeholders: {project_id} is auto-replaced with this.projectId.
-   */
-  static get OPERATION_ROUTES () {
-    return {
-      // Embeddings
-      generate_embeddings: { method: 'POST', path: '/api/v1/projects/{project_id}/embeddings/generate' },
-      embed_and_store: { method: 'POST', path: '/api/v1/projects/{project_id}/embeddings/embed-and-store' },
-      semantic_search: { method: 'POST', path: '/api/v1/projects/{project_id}/embeddings/search' },
-
-      // Memory
-      store_memory: { method: 'POST', path: '/api/v1/public/memory/' },
-      search_memory: { method: 'POST', path: '/api/v1/public/memory/search' },
-      get_context: { method: 'GET', path: '/api/v1/public/memory/' },
-
-      // Vectors
-      upsert_vector: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/upsert' },
-      batch_upsert_vectors: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/upsert' },
-      search_vectors: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/search' },
-      delete_vector: { method: 'DELETE', path: '/api/v1/projects/{project_id}/database/vectors/{vector_id}' },
-      get_vector: { method: 'GET', path: '/api/v1/projects/{project_id}/database/vectors/{vector_id}' },
-      list_vectors: { method: 'GET', path: '/api/v1/projects/{project_id}/database/vectors' },
-      vector_stats: { method: 'GET', path: '/api/v1/projects/{project_id}/database/vectors/stats' },
-      create_vector_index: { method: 'POST', path: '/api/v1/public/v1/vectors/index' },
-      // optimize_vectors and export_vectors have no backend endpoint yet
-      // optimize_vectors: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/optimize' },
-      // export_vectors: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/export' },
-
-      // Quantum
-      quantum_compress: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/quantum/compress' },
-      quantum_decompress: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/quantum/decompress' },
-      quantum_hybrid_search: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/quantum/search' },
-      quantum_optimize: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/quantum/optimize' },
-      quantum_feature_map: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/quantum/feature-map' },
-      quantum_kernel: { method: 'POST', path: '/api/v1/projects/{project_id}/database/vectors/quantum/kernel' },
-
-      // Tables
-      create_table: { method: 'POST', path: '/api/v1/projects/{project_id}/database/tables' },
-      list_tables: { method: 'GET', path: '/api/v1/projects/{project_id}/database/tables' },
-      get_table: { method: 'GET', path: '/api/v1/projects/{project_id}/database/tables/{table_id}' },
-      delete_table: { method: 'DELETE', path: '/api/v1/projects/{project_id}/database/tables/{table_name}' },
-      insert_rows: { method: 'POST', path: '/api/v1/projects/{project_id}/database/tables/{table_name}/rows' },
-      query_rows: { method: 'POST', path: '/api/v1/projects/{project_id}/database/tables/{table_name}/query' },
-      update_rows: { method: 'PUT', path: '/api/v1/projects/{project_id}/database/tables/{table_name}/rows/bulk' },
-      delete_rows: { method: 'DELETE', path: '/api/v1/projects/{project_id}/database/tables/{table_name}/rows/bulk' },
-
-      // Files
-      upload_file: { method: 'POST', path: '/api/v1/projects/{project_id}/files/upload', multipart: true },
-      list_files: { method: 'GET', path: '/api/v1/projects/{project_id}/files' },
-      get_file_metadata: { method: 'GET', path: '/api/v1/projects/{project_id}/files/{file_id}' },
-      download_file: { method: 'GET', path: '/api/v1/projects/{project_id}/files/{file_id}/download' },
-      delete_file: { method: 'DELETE', path: '/api/v1/projects/{project_id}/files/{file_id}' },
-      generate_presigned_url: { method: 'POST', path: '/api/v1/projects/{project_id}/files/{file_id}/presigned-url' },
-
-      // Events
-      create_event: { method: 'POST', path: '/api/v1/projects/{project_id}/database/events' },
-      list_events: { method: 'GET', path: '/api/v1/projects/{project_id}/database/events' },
-      get_event: { method: 'GET', path: '/api/v1/projects/{project_id}/database/events/{event_id}' },
-      // subscribe_events is WebSocket, not REST — use list_events instead
-      // subscribe_events: { method: 'POST', path: '/api/v1/projects/{project_id}/database/events/subscribe' },
-      event_stats: { method: 'GET', path: '/api/v1/projects/{project_id}/database/events/stats' },
-
-      // Projects
-      create_project: { method: 'POST', path: '/api/v1/projects' },
-      list_projects: { method: 'GET', path: '/api/v1/projects/' },
-      get_project: { method: 'GET', path: '/api/v1/projects/{project_id}' },
-      update_project: { method: 'PATCH', path: '/api/v1/projects/{project_id}' },
-      delete_project: { method: 'DELETE', path: '/api/v1/projects/{project_id}' },
-      get_project_stats: { method: 'GET', path: '/api/v1/projects/{project_id}/usage' },
-      enable_database: { method: 'POST', path: '/api/v1/projects/{project_id}/database/enable' },
-
-      // RLHF
-      rlhf_collect_interaction: { method: 'POST', path: '/api/v1/projects/{project_id}/database/rlhf/interactions' },
-      rlhf_collect_agent_feedback: { method: 'POST', path: '/api/v1/projects/{project_id}/database/rlhf/agent-feedback' },
-      rlhf_collect_workflow_feedback: { method: 'POST', path: '/api/v1/projects/{project_id}/database/rlhf/workflow-feedback' },
-      rlhf_collect_error_report: { method: 'POST', path: '/api/v1/projects/{project_id}/database/rlhf/error-reports' },
-      rlhf_get_status: { method: 'GET', path: '/api/v1/projects/{project_id}/database/rlhf/status' },
-      rlhf_get_summary: { method: 'GET', path: '/api/v1/projects/{project_id}/database/rlhf/summary' },
-      rlhf_start_collection: { method: 'POST', path: '/api/v1/projects/{project_id}/database/rlhf/start' },
-      rlhf_stop_collection: { method: 'POST', path: '/api/v1/projects/{project_id}/database/rlhf/stop' },
-      rlhf_get_session_interactions: { method: 'GET', path: '/api/v1/projects/{project_id}/database/rlhf/sessions/{session_id}' },
-      rlhf_broadcast_event: { method: 'POST', path: '/api/v1/projects/{project_id}/database/rlhf/broadcast' },
-
-      // Admin
-      admin_get_system_stats: { method: 'GET', path: '/api/v1/admin/system-stats' },
-      admin_list_all_projects: { method: 'GET', path: '/api/v1/admin/projects' },
-      admin_get_user_usage: { method: 'GET', path: '/api/v1/admin/usage' },
-      admin_system_health: { method: 'GET', path: '/api/v1/admin/health' },
-      admin_optimize_database: { method: 'POST', path: '/api/v1/admin/optimize' },
-
-      // Postgres (basic operations via REST)
-      postgres_query: { method: 'POST', path: '/api/v1/projects/{project_id}/database/postgres/query' },
-      postgres_schema_info: { method: 'GET', path: '/api/v1/projects/{project_id}/database/postgres/schema' },
-      postgres_create_table: { method: 'POST', path: '/api/v1/projects/{project_id}/database/postgres/tables' },
-      postgres_backup: { method: 'POST', path: '/api/v1/projects/{project_id}/database/postgres/backup' },
-      postgres_restore: { method: 'POST', path: '/api/v1/projects/{project_id}/database/postgres/restore' },
-      postgres_stats: { method: 'GET', path: '/api/v1/projects/{project_id}/database/postgres/stats' },
-    }
-  }
-
-  /**
-   * Execute an operation by routing to the correct REST endpoint.
-   * Replaces the deprecated /mcp/execute wrapper.
-   *
-   * @param {string} operation - Backend operation name
+   * Execute an operation through the unified MCP execute endpoint
+   * @param {string} operation - Backend operation name (e.g., 'upsert_vector')
    * @param {object} params - Operation parameters
    * @returns {object} MCP response
    */
   async executeOperation (operation, params) {
     try {
-      const projectId = params.project_id || this.projectId
-      if (!projectId && operation !== 'list_projects' && operation !== 'create_project' &&
-          !operation.startsWith('admin_') && operation !== 'store_memory' &&
-          operation !== 'search_memory' && operation !== 'get_context') {
-        throw new Error('project_id is required. Set ZERODB_PROJECT_ID or pass project_id in params.')
+      // Add project_id to params if not present and we have one
+      if (!params.project_id && this.projectId) {
+        params.project_id = this.projectId
       }
 
-      const route = ZeroDBMCPServer.OPERATION_ROUTES[operation]
-      if (!route) {
-        throw new Error(`Unknown operation: ${operation}. Available: ${Object.keys(ZeroDBMCPServer.OPERATION_ROUTES).join(', ')}`)
-      }
+      console.error(`Executing operation: ${operation}`)
 
-      // Map MCP tool param names → API field names where they differ
-      const PARAM_MAPPINGS = {
-        create_event: { event_type: 'topic', data: 'event_payload' },
-      }
-      const mapping = PARAM_MAPPINGS[operation]
-      if (mapping) {
-        for (const [from, to] of Object.entries(mapping)) {
-          if (params[from] !== undefined && params[to] === undefined) {
-            params[to] = params[from]
-            delete params[from]
-          }
+      const response = await axios.post(
+        `${this.apiUrl}/v1/public/mcp`,
+        {
+          operation,
+          params
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${this.apiToken}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 30000 // 30 second timeout for operations
+        }
+      )
+
+      // Check if operation was successful
+      if (response.data.success) {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify(response.data.result, null, 2)
+          }]
+        }
+      } else {
+        return {
+          content: [{
+            type: 'text',
+            text: `Operation failed: ${JSON.stringify(response.data.error, null, 2)}`
+          }],
+          isError: true
         }
       }
-
-      // Special transforms for operations with different data shapes
-      if (operation === 'insert_rows' && params.rows) {
-        // API expects row_data (single dict), not rows (array)
-        // Insert one row at a time, or send first row
-        params.row_data = Array.isArray(params.rows) ? params.rows[0] : params.rows
-        delete params.rows
-      }
-      if (operation === 'update_rows' && params.data) {
-        // API expects MongoDB-style update operators
-        params.update = { '$set': params.data }
-        delete params.data
-      }
-
-      // Build URL with path parameter substitution
-      let url = `${this.apiUrl}${route.path}`
-      url = url.replace('{project_id}', projectId || '')
-
-      // Replace any other path params from params object
-      for (const [key, value] of Object.entries(params)) {
-        url = url.replace(`{${key}}`, value)
-      }
-
-      console.error(`${route.method} ${url}`)
-
-      const config = {
-        headers: {
-          Authorization: `Bearer ${this.apiToken}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 30000
-      }
-
-      let response
-      if (route.method === 'GET') {
-        response = await axios.get(url, { ...config, params })
-      } else if (route.method === 'DELETE') {
-        response = await axios.delete(url, { ...config, data: params })
-      } else if (route.method === 'PUT') {
-        response = await axios.put(url, params, config)
-      } else if (route.method === 'PATCH') {
-        response = await axios.patch(url, params, config)
-      } else {
-        response = await axios.post(url, params, config)
-      }
-
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify(response.data, null, 2)
-        }]
-      }
     } catch (error) {
-      const errorMsg = error.response?.data?.detail || error.response?.data?.error?.message || error.message
+      const errorMsg = error.response?.data?.error?.message || error.message
+      const errorDetails = error.response?.data?.error?.details || ''
+
       console.error(`Operation ${operation} failed:`, errorMsg)
 
       return {
         content: [{
           type: 'text',
-          text: `Error executing ${operation}: ${errorMsg}`
+          text: `Error executing ${operation}: ${errorMsg}${errorDetails ? '\nDetails: ' + JSON.stringify(errorDetails) : ''}`
         }],
         isError: true
       }
@@ -1850,6 +1626,10 @@ Pass search results as context to your LLM (via chat completions or any framewor
   }
 
   async ensureValidToken () {
+    // Skip renewal for static API tokens
+    if (this.useStaticToken && this.apiToken) {
+      return
+    }
     // Check if token needs renewal (5 minutes before expiry)
     if (!this.apiToken || !this.tokenExpiry || Date.now() > (this.tokenExpiry - 5 * 60 * 1000)) {
       await this.renewToken()
@@ -1861,9 +1641,9 @@ Pass search results as context to your LLM (via chat completions or any framewor
       console.error('Renewing authentication token...')
 
       const response = await axios.post(
-        `${this.apiUrl}/v1/public/auth/login-json`,
+        `${this.apiUrl}/v1/auth/login`,
         {
-          username: this.username,
+          email: this.username,
           password: this.password
         },
         {
@@ -1909,6 +1689,8 @@ Pass search results as context to your LLM (via chat completions or any framewor
   }
 
   setupTokenRenewal () {
+    // Skip scheduled renewal for static API tokens
+    if (this.useStaticToken) return
     // Renew token every 25 minutes (tokens expire after 30 minutes)
     setInterval(async () => {
       try {
@@ -1935,7 +1717,7 @@ Pass search results as context to your LLM (via chat completions or any framewor
       console.error(`Provisioning PostgreSQL instance for project ${project_id}...`)
 
       const response = await axios.post(
-        `${this.apiUrl}/v1/zerodb/projects/${project_id}/postgres`,
+        `${this.apiUrl}/v1/projects/${project_id}/postgres`,
         {
           instance_size,
           postgres_version,
@@ -1984,7 +1766,7 @@ Pass search results as context to your LLM (via chat completions or any framewor
       console.error(`Getting PostgreSQL status for project ${project_id}...`)
 
       const response = await axios.get(
-        `${this.apiUrl}/v1/zerodb/projects/${project_id}/postgres`,
+        `${this.apiUrl}/v1/projects/${project_id}/postgres`,
         {
           headers: {
             Authorization: `Bearer ${this.apiToken}`
@@ -2027,7 +1809,7 @@ Pass search results as context to your LLM (via chat completions or any framewor
       console.error(`Getting PostgreSQL connection for project ${project_id}...`)
 
       const response = await axios.get(
-        `${this.apiUrl}/v1/zerodb/projects/${project_id}/postgres/connection`,
+        `${this.apiUrl}/v1/projects/${project_id}/postgres/connection`,
         {
           params: { credential_type },
           headers: {
@@ -2071,7 +1853,7 @@ Pass search results as context to your LLM (via chat completions or any framewor
       console.error(`Getting PostgreSQL usage for project ${project_id}...`)
 
       const response = await axios.get(
-        `${this.apiUrl}/v1/zerodb/projects/${project_id}/postgres/usage`,
+        `${this.apiUrl}/v1/projects/${project_id}/postgres/usage`,
         {
           params: { hours },
           headers: {
@@ -2120,7 +1902,7 @@ Pass search results as context to your LLM (via chat completions or any framewor
       }
 
       const response = await axios.get(
-        `${this.apiUrl}/v1/zerodb/projects/${project_id}/postgres/logs`,
+        `${this.apiUrl}/v1/projects/${project_id}/postgres/logs`,
         {
           params,
           headers: {
@@ -2164,7 +1946,7 @@ Pass search results as context to your LLM (via chat completions or any framewor
       console.error(`Restarting PostgreSQL instance for project ${project_id}...`)
 
       const response = await axios.post(
-        `${this.apiUrl}/v1/zerodb/projects/${project_id}/postgres/restart`,
+        `${this.apiUrl}/v1/projects/${project_id}/postgres/restart`,
         {},
         {
           headers: {
@@ -2213,7 +1995,7 @@ Pass search results as context to your LLM (via chat completions or any framewor
       console.error(`Deleting PostgreSQL instance for project ${project_id}...`)
 
       const response = await axios.delete(
-        `${this.apiUrl}/v1/zerodb/projects/${project_id}/postgres`,
+        `${this.apiUrl}/v1/projects/${project_id}/postgres`,
         {
           headers: {
             Authorization: `Bearer ${this.apiToken}`
@@ -2251,21 +2033,16 @@ Pass search results as context to your LLM (via chat completions or any framewor
 
       const transport = new StdioServerTransport()
       await this.server.connect(transport)
-      console.error('')
-      console.error('  ███████╗███████╗██████╗  ██████╗ ██████╗ ██████╗')
-      console.error('  ╚══███╔╝██╔════╝██╔══██╗██╔═══██╗██╔══██╗██╔══██╗')
-      console.error('    ███╔╝ █████╗  ██████╔╝██║   ██║██║  ██║██████╔╝')
-      console.error('   ███╔╝  ██╔══╝  ██╔══██╗██║   ██║██║  ██║██╔══██╗')
-      console.error('  ███████╗███████╗██║  ██║╚██████╔╝██████╔╝██████╔╝')
-      console.error('  ╚══════╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚═════╝')
-      console.error('  The Persistent Knowledge Layer for AI Agents')
-      console.error('  Built by AINative Studio')
-      console.error('')
-      console.error('  MCP Server v2.3.0 | 77 tools | REST-routed')
-      console.error(`  API: ${this.apiUrl}`)
-      console.error(`  Project: ${this.projectId}`)
-      console.error(`  Token expires: ${this.tokenExpiry ? new Date(this.tokenExpiry).toISOString() : 'Unknown'}`)
-      console.error('')
+      console.error('ZeroDB MCP Server v2.3.0 running on stdio')
+      console.error(`API URL: ${this.apiUrl}`)
+      console.error(`Project ID: ${this.projectId}`)
+      console.error('Operations: 77 (includes 7 dedicated PostgreSQL management tools, all annotated with MCP hints)')
+      if (this.useStaticToken) {
+        console.error('\u2705 Auth: API key (recommended)')
+      } else {
+        console.error('\u26a0\ufe0f  Auth: Username/password (deprecated \u2014 switch to API key)')
+      }
+      console.error(`Token expires: ${this.tokenExpiry ? new Date(this.tokenExpiry).toISOString() : 'Unknown'}`)
     } catch (error) {
       console.error('Failed to start ZeroDB MCP Server:', error.message)
       process.exit(1)

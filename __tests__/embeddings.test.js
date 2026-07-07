@@ -121,7 +121,7 @@ describe('ZeroDBMCPServer - Embedding Tools (TDD)', () => {
       }
 
       nock(TEST_CONFIG.apiUrl)
-        .post('/v1/public/zerodb/mcp/execute', body =>
+        .post('/v1/public/mcp', body =>
           body.operation === 'generate_embeddings' &&
           body.params.texts[0] === 'Test document'
         )
@@ -143,7 +143,7 @@ describe('ZeroDBMCPServer - Embedding Tools (TDD)', () => {
       }
 
       nock(TEST_CONFIG.apiUrl)
-        .post('/v1/public/zerodb/mcp/execute', body =>
+        .post('/v1/public/mcp', body =>
           body.operation === 'generate_embeddings' &&
           body.params.model === 'BAAI/bge-base-en-v1.5'
         )
@@ -165,7 +165,7 @@ describe('ZeroDBMCPServer - Embedding Tools (TDD)', () => {
       }
 
       nock(TEST_CONFIG.apiUrl)
-        .post('/v1/public/zerodb/mcp/execute', body =>
+        .post('/v1/public/mcp', body =>
           body.operation === 'generate_embeddings' &&
           body.params.model === 'BAAI/bge-large-en-v1.5'
         )
@@ -191,7 +191,7 @@ describe('ZeroDBMCPServer - Embedding Tools (TDD)', () => {
       }
 
       nock(TEST_CONFIG.apiUrl)
-        .post('/v1/public/zerodb/mcp/execute')
+        .post('/v1/public/mcp')
         .reply(200, { success: true, result: mockEmbeddings })
 
       const result = await server.routeToolCall('zerodb_generate_embeddings', {
@@ -204,7 +204,7 @@ describe('ZeroDBMCPServer - Embedding Tools (TDD)', () => {
 
     test('should handle API errors gracefully', async () => {
       nock(TEST_CONFIG.apiUrl)
-        .post('/v1/public/zerodb/mcp/execute')
+        .post('/v1/public/mcp')
         .reply(500, { error: 'Model loading failed' })
 
       const result = await server.routeToolCall('zerodb_generate_embeddings', {
@@ -228,7 +228,7 @@ describe('ZeroDBMCPServer - Embedding Tools (TDD)', () => {
       }
 
       nock(TEST_CONFIG.apiUrl)
-        .post('/v1/public/zerodb/mcp/execute', body =>
+        .post('/v1/public/mcp', body =>
           body.operation === 'embed_and_store'
         )
         .reply(200, { success: true, result: mockResponse })
@@ -251,7 +251,7 @@ describe('ZeroDBMCPServer - Embedding Tools (TDD)', () => {
       }
 
       nock(TEST_CONFIG.apiUrl)
-        .post('/v1/public/zerodb/mcp/execute', body =>
+        .post('/v1/public/mcp', body =>
           body.operation === 'embed_and_store' &&
           body.params.model === 'BAAI/bge-base-en-v1.5' &&
           body.params.namespace === 'custom-namespace'
@@ -277,7 +277,7 @@ describe('ZeroDBMCPServer - Embedding Tools (TDD)', () => {
       }
 
       nock(TEST_CONFIG.apiUrl)
-        .post('/v1/public/zerodb/mcp/execute', body =>
+        .post('/v1/public/mcp', body =>
           body.params.metadata && body.params.metadata.source === 'test'
         )
         .reply(200, { success: true, result: mockResponse })
@@ -315,7 +315,7 @@ describe('ZeroDBMCPServer - Embedding Tools (TDD)', () => {
       }
 
       nock(TEST_CONFIG.apiUrl)
-        .post('/v1/public/zerodb/mcp/execute', body =>
+        .post('/v1/public/mcp', body =>
           body.operation === 'semantic_search' &&
           body.params.query_text === 'search query'
         )
@@ -343,7 +343,7 @@ describe('ZeroDBMCPServer - Embedding Tools (TDD)', () => {
       }
 
       nock(TEST_CONFIG.apiUrl)
-        .post('/v1/public/zerodb/mcp/execute', body =>
+        .post('/v1/public/mcp', body =>
           body.operation === 'semantic_search' &&
           body.params.model === 'BAAI/bge-base-en-v1.5' &&
           body.params.limit === 5
@@ -368,7 +368,7 @@ describe('ZeroDBMCPServer - Embedding Tools (TDD)', () => {
       }
 
       nock(TEST_CONFIG.apiUrl)
-        .post('/v1/public/zerodb/mcp/execute', body =>
+        .post('/v1/public/mcp', body =>
           body.params.namespace === 'custom-ns'
         )
         .reply(200, { success: true, result: mockResults })
@@ -388,7 +388,7 @@ describe('ZeroDBMCPServer - Embedding Tools (TDD)', () => {
       }
 
       nock(TEST_CONFIG.apiUrl)
-        .post('/v1/public/zerodb/mcp/execute', body =>
+        .post('/v1/public/mcp', body =>
           body.params.threshold === 0.9
         )
         .reply(200, { success: true, result: mockResults })
@@ -408,7 +408,7 @@ describe('ZeroDBMCPServer - Embedding Tools (TDD)', () => {
       }
 
       nock(TEST_CONFIG.apiUrl)
-        .post('/v1/public/zerodb/mcp/execute')
+        .post('/v1/public/mcp')
         .reply(200, { success: true, result: mockResults })
 
       const result = await server.routeToolCall('zerodb_semantic_search', {
@@ -430,7 +430,7 @@ describe('ZeroDBMCPServer - Embedding Tools (TDD)', () => {
       }
 
       nock(TEST_CONFIG.apiUrl)
-        .post('/v1/public/zerodb/mcp/execute', body =>
+        .post('/v1/public/mcp', body =>
           body.operation === 'upsert_vector' &&
           body.params.vector_embedding.length === 384
         )
@@ -454,7 +454,7 @@ describe('ZeroDBMCPServer - Embedding Tools (TDD)', () => {
       }
 
       nock(TEST_CONFIG.apiUrl)
-        .post('/v1/public/zerodb/mcp/execute', body =>
+        .post('/v1/public/mcp', body =>
           body.params.vector_embedding.length === 768
         )
         .reply(200, { success: true, result: mockResponse })
@@ -476,7 +476,7 @@ describe('ZeroDBMCPServer - Embedding Tools (TDD)', () => {
       }
 
       nock(TEST_CONFIG.apiUrl)
-        .post('/v1/public/zerodb/mcp/execute', body =>
+        .post('/v1/public/mcp', body =>
           body.params.vector_embedding.length === 1024
         )
         .reply(200, { success: true, result: mockResponse })
@@ -498,7 +498,7 @@ describe('ZeroDBMCPServer - Embedding Tools (TDD)', () => {
       }
 
       nock(TEST_CONFIG.apiUrl)
-        .post('/v1/public/zerodb/mcp/execute', body =>
+        .post('/v1/public/mcp', body =>
           body.params.vector_embedding.length === 1536
         )
         .reply(200, { success: true, result: mockResponse })
@@ -516,7 +516,7 @@ describe('ZeroDBMCPServer - Embedding Tools (TDD)', () => {
 
       // Backend will reject unsupported dimensions
       nock(TEST_CONFIG.apiUrl)
-        .post('/v1/public/zerodb/mcp/execute')
+        .post('/v1/public/mcp')
         .reply(400, {
           success: false,
           error: { message: 'Unsupported dimension: 512' }
@@ -543,7 +543,7 @@ describe('ZeroDBMCPServer - Embedding Tools (TDD)', () => {
       }
 
       nock(TEST_CONFIG.apiUrl)
-        .post('/v1/public/zerodb/mcp/execute', body =>
+        .post('/v1/public/mcp', body =>
           body.operation === 'search_vectors' &&
           body.params.query_vector.length === 384
         )
@@ -565,7 +565,7 @@ describe('ZeroDBMCPServer - Embedding Tools (TDD)', () => {
       }
 
       nock(TEST_CONFIG.apiUrl)
-        .post('/v1/public/zerodb/mcp/execute', body =>
+        .post('/v1/public/mcp', body =>
           body.params.query_vector.length === 768
         )
         .reply(200, { success: true, result: mockResults })
@@ -586,7 +586,7 @@ describe('ZeroDBMCPServer - Embedding Tools (TDD)', () => {
       }
 
       nock(TEST_CONFIG.apiUrl)
-        .post('/v1/public/zerodb/mcp/execute', body =>
+        .post('/v1/public/mcp', body =>
           body.params.query_vector.length === 1024
         )
         .reply(200, { success: true, result: mockResults })
@@ -607,7 +607,7 @@ describe('ZeroDBMCPServer - Embedding Tools (TDD)', () => {
       }
 
       nock(TEST_CONFIG.apiUrl)
-        .post('/v1/public/zerodb/mcp/execute', body =>
+        .post('/v1/public/mcp', body =>
           body.params.query_vector.length === 1536
         )
         .reply(200, { success: true, result: mockResults })
@@ -641,7 +641,7 @@ describe('ZeroDBMCPServer - Embedding Tools (TDD)', () => {
       }
 
       nock(TEST_CONFIG.apiUrl)
-        .post('/v1/public/zerodb/mcp/execute', body =>
+        .post('/v1/public/mcp', body =>
           body.operation === 'batch_upsert_vectors'
         )
         .reply(200, { success: true, result: mockResponse })
@@ -667,7 +667,7 @@ describe('ZeroDBMCPServer - Embedding Tools (TDD)', () => {
       }
 
       nock(TEST_CONFIG.apiUrl)
-        .post('/v1/public/zerodb/mcp/execute')
+        .post('/v1/public/mcp')
         .reply(200, { success: true, result: mockResponse })
 
       const result = await server.routeToolCall('zerodb_batch_upsert_vectors', {
@@ -684,7 +684,7 @@ describe('ZeroDBMCPServer - Embedding Tools (TDD)', () => {
     test('should handle full RAG workflow with 384-dim embeddings', async () => {
       // Step 1: Embed and store documents
       nock(TEST_CONFIG.apiUrl)
-        .post('/v1/public/zerodb/mcp/execute', body =>
+        .post('/v1/public/mcp', body =>
           body.operation === 'embed_and_store'
         )
         .reply(200, {
@@ -706,7 +706,7 @@ describe('ZeroDBMCPServer - Embedding Tools (TDD)', () => {
 
       // Step 2: Search with semantic query
       nock(TEST_CONFIG.apiUrl)
-        .post('/v1/public/zerodb/mcp/execute', body =>
+        .post('/v1/public/mcp', body =>
           body.operation === 'semantic_search'
         )
         .reply(200, {
@@ -733,7 +733,7 @@ describe('ZeroDBMCPServer - Embedding Tools (TDD)', () => {
     test('should handle dimension mismatch scenario', async () => {
       // Generate 384-dim embedding
       nock(TEST_CONFIG.apiUrl)
-        .post('/v1/public/zerodb/mcp/execute', body =>
+        .post('/v1/public/mcp', body =>
           body.operation === 'generate_embeddings' &&
           body.params.model === 'BAAI/bge-small-en-v1.5'
         )
@@ -757,7 +757,7 @@ describe('ZeroDBMCPServer - Embedding Tools (TDD)', () => {
     test('should support namespace isolation across dimensions', async () => {
       // Store 384-dim in namespace-384
       nock(TEST_CONFIG.apiUrl)
-        .post('/v1/public/zerodb/mcp/execute')
+        .post('/v1/public/mcp')
         .reply(200, {
           success: true,
           result: {
@@ -777,7 +777,7 @@ describe('ZeroDBMCPServer - Embedding Tools (TDD)', () => {
 
       // Store 768-dim in namespace-768
       nock(TEST_CONFIG.apiUrl)
-        .post('/v1/public/zerodb/mcp/execute')
+        .post('/v1/public/mcp')
         .reply(200, {
           success: true,
           result: {

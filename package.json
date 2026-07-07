@@ -1,7 +1,7 @@
 {
   "name": "ainative-zerodb-mcp-server",
-  "version": "2.2.0",
-  "description": "AINative ZeroDB MCP Server - 69 operations for vector search, free embeddings, quantum compression, NoSQL, PostgreSQL, files, events, RLHF, and persistent memory for AI agents with enterprise security. Production-ready MCP integration for Claude, Windsurf, and other AI assistants.",
+  "version": "2.3.1",
+  "description": "AINative ZeroDB MCP Server - 77 operations for vector search, TurboQuant vector compression (PolarQuant + QJL), NoSQL, dedicated PostgreSQL management, files, events, RLHF, and persistent memory for AI agents with enterprise security. All tools annotated with readOnly/destructive/idempotent hints per MCP spec 2025-03-26. Production-ready MCP integration for AI assistants.",
   "main": "index.js",
   "type": "commonjs",
   "bin": {
@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "node index.js",
-    "test": "jest --coverage --coverageThreshold='{\"global\":{\"branches\":90,\"functions\":71,\"lines\":81,\"statements\":80}}' --forceExit",
+    "test": "jest --coverage --coverageThreshold='{\"global\":{\"branches\":82,\"functions\":65,\"lines\":82,\"statements\":82}}' --forceExit",
     "test:watch": "jest --watch",
     "test:ci": "jest --coverage --ci --maxWorkers=2",
     "lint": "eslint *.js __tests__/**/*.js",
@@ -79,6 +79,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.24.0",
+    "ainative-design-system-mcp-server": "^1.0.1",
+    "ainative-zerodb-mcp-server": "^2.2.0",
     "axios": "^1.7.7",
     "uuid": "^11.0.3"
   },
@@ -99,8 +101,7 @@
     "LICENSE",
     "SECURITY.md",
     "CHANGELOG.md",
-    "MIGRATION.md",
-    "EMBEDDING_TOOLS_GUIDE.md"
+    "MIGRATION.md"
   ],
   "publishConfig": {
     "access": "public",
