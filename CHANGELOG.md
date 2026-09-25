@@ -5,7 +5,12 @@ All notable changes to the ZeroDB MCP Server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.3.4] - 2026-09-25
+## [2.3.5] - 2026-09-25
+
+### Changed
+- Version bump to 2.3.5 due to npm publish restriction (v2.3.4 was left stuck in a "previously staged" state by the registry and could not be retried under that version number). All functionality identical to the intended v2.3.4 release below.
+
+## [2.3.4] - 2026-09-25 (Unpublished — stuck on npm registry, superseded by 2.3.5)
 
 ### Fixed
 - **Protocol-level error handling**: calling a tool name that does not exist now returns a genuine JSON-RPC 2.0 error (`error.code: -32601 MethodNotFound`) instead of a fake success response with `isError: true`. Previously every failure, including an unknown tool name, was silently wrapped as a successful `result` — masking protocol errors from clients that correctly check for the `error` key.

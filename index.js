@@ -107,7 +107,7 @@ class ZeroDBMCPServer {
     this.server = new Server(
       {
         name: 'zerodb-mcp',
-        version: '2.3.4'
+        version: '2.3.5'
       },
       {
         capabilities: {
@@ -2045,7 +2045,7 @@ class ZeroDBMCPServer {
 
       const transport = new StdioServerTransport()
       await this.server.connect(transport)
-      console.error('ZeroDB MCP Server v2.3.4 running on stdio')
+      console.error('ZeroDB MCP Server v2.3.5 running on stdio')
       console.error(`API URL: ${this.apiUrl}`)
       console.error(`Project ID: ${this.projectId}`)
       console.error('Operations: 77 (includes 7 dedicated PostgreSQL management tools, all annotated with MCP hints)')
