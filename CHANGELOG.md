@@ -5,6 +5,12 @@ All notable changes to the ZeroDB MCP Server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.4] - 2026-09-25
+
+### Fixed
+- **Protocol-level error handling**: calling a tool name that does not exist now returns a genuine JSON-RPC 2.0 error (`error.code: -32601 MethodNotFound`) instead of a fake success response with `isError: true`. Previously every failure, including an unknown tool name, was silently wrapped as a successful `result` — masking protocol errors from clients that correctly check for the `error` key.
+- **Machine-readable error codes**: tool-execution failures (bad/missing arguments, upstream API errors, validation failures) keep the spec-correct `isError: true` convention unchanged, but now also carry a stable `code` (e.g. `VALIDATION_ERROR`, `INVALID_ARGS`, `UPSTREAM_ERROR`, `EXECUTION_ERROR`) in the text content block's `_meta.code` and in a top-level `structuredContent.code`, so agents can branch on failure type without string-matching the free-text message.
+
 ## [2.3.2] - 2026-07-07
 
 ### Fixed

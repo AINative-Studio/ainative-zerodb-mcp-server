@@ -3,7 +3,61 @@
 const { Server } = require('@modelcontextprotocol/sdk/server/index.js')
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js')
 const { CallToolRequestSchema, ListToolsRequestSchema } = require('@modelcontextprotocol/sdk/types.js')
+const { McpError, ErrorCode } = require('@modelcontextprotocol/sdk/types.js')
 const axios = require('axios')
+
+/**
+ * Build a spec-compliant tool-execution-failure result.
+ *
+ * Per MCP spec, `isError: true` inside a successful JSON-RPC result is the
+ * correct convention when a tool ran but failed (bad args, upstream error,
+ * validation error, etc.) — as opposed to a protocol-level failure (unknown
+ * tool name), which must be a real JSON-RPC error (see routeToolCall's
+ * default case, which throws McpError(ErrorCode.MethodNotFound, ...)).
+ *
+ * This helper adds a stable, machine-readable `code` alongside the
+ * human-readable text, so agents can branch on it programmatically instead
+ * of string-matching the free-text message. The code is carried in the
+ * text content block's `_meta` field (an SDK-defined extension point) and
+ * mirrored at the top-level `structuredContent` field, both of which are
+ * legal on a CallToolResult per the SDK's CallToolResultSchema.
+ *
+ * @param {string} code - stable machine-readable error code, e.g. 'INVALID_ARGS'
+ * @param {string} text - human-readable error message
+ * @returns {object} MCP CallToolResult with isError: true
+ */
+function toolErrorResult (code, text) {
+  return {
+    content: [{
+      type: 'text',
+      text,
+      _meta: { code }
+    }],
+    structuredContent: { code, message: text },
+    isError: true
+  }
+}
+
+/**
+ * Classify a caught error for the dedicated PostgreSQL management methods
+ * (provisionPostgres, getPostgresStatus, etc.), which validate required args
+ * locally (throwing a plain Error with no `.response`) before making an
+ * axios call to the backend (whose failures carry `.response`).
+ *
+ * @param {Error} error
+ * @returns {string} one of 'VALIDATION_ERROR', 'INVALID_ARGS', 'UPSTREAM_ERROR'
+ */
+function pgErrorCode (error) {
+  if (!error.response) {
+    // No HTTP response means this never reached the network — it's either
+    // our own local arg validation (e.g. "project_id is required") or a
+    // connection-level failure. Local validation throws are the common case
+    // here, so classify as VALIDATION_ERROR.
+    return 'VALIDATION_ERROR'
+  }
+  const status = error.response.status
+  return status >= 400 && status < 500 ? 'INVALID_ARGS' : 'UPSTREAM_ERROR'
+}
 
 /**
  * ZeroDB MCP Server v2.2.0
@@ -53,7 +107,7 @@ class ZeroDBMCPServer {
     this.server = new Server(
       {
         name: 'zerodb-mcp',
-        version: '2.3.2'
+        version: '2.3.4'
       },
       {
         capabilities: {
@@ -1535,7 +1589,12 @@ class ZeroDBMCPServer {
         return await this.manualTokenRenewal()
 
       default:
-        throw new Error(`Unknown tool: ${name}`)
+        // Protocol-level failure: the tool name itself doesn't exist. Per the
+        // MCP spec this MUST be a real JSON-RPC error, not a successful
+        // result with isError: true — throwing McpError here lets the SDK's
+        // request-handler wrapper (Protocol#_onrequest) convert it into a
+        // genuine JSON-RPC 2.0 error response using this error's code/message.
+        throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`)
     }
   }
 
@@ -1550,14 +1609,22 @@ class ZeroDBMCPServer {
         // Route to appropriate handler
         return await this.routeToolCall(name, args)
       } catch (error) {
-        console.error(`Error executing ${name}:`, error.message)
-        return {
-          content: [{
-            type: 'text',
-            text: `Error executing ${name}: ${error.message}`
-          }],
-          isError: true
+        // Protocol-level failures (e.g. unknown tool name) are raised as
+        // McpError and MUST propagate as a real JSON-RPC error response, not
+        // be swallowed into an isError:true result. Re-throwing here lets the
+        // SDK's Protocol#_onrequest wrapper build the JSON-RPC error from
+        // error.code/error.message.
+        if (error instanceof McpError) {
+          console.error(`Protocol error executing ${name}:`, error.message)
+          throw error
         }
+
+        // Tool-execution failures (bad args, upstream error, validation,
+        // etc.) stay as a successful JSON-RPC result with isError: true, per
+        // MCP spec — but carry a stable machine-readable code so agents can
+        // branch on it instead of string-matching the message.
+        console.error(`Error executing ${name}:`, error.message)
+        return toolErrorResult('EXECUTION_ERROR', `Error executing ${name}: ${error.message}`)
       }
     })
   }
@@ -1601,27 +1668,20 @@ class ZeroDBMCPServer {
           }]
         }
       } else {
-        return {
-          content: [{
-            type: 'text',
-            text: `Operation failed: ${JSON.stringify(response.data.error, null, 2)}`
-          }],
-          isError: true
-        }
+        return toolErrorResult('UPSTREAM_ERROR', `Operation failed: ${JSON.stringify(response.data.error, null, 2)}`)
       }
     } catch (error) {
       const errorMsg = error.response?.data?.error?.message || error.message
       const errorDetails = error.response?.data?.error?.details || ''
+      const status = error.response?.status
+      // 4xx from the backend means our request was rejected (bad/missing
+      // args, failed validation) as opposed to the upstream service itself
+      // failing (5xx, timeout, network error).
+      const code = status && status >= 400 && status < 500 ? 'INVALID_ARGS' : 'UPSTREAM_ERROR'
 
       console.error(`Operation ${operation} failed:`, errorMsg)
 
-      return {
-        content: [{
-          type: 'text',
-          text: `Error executing ${operation}: ${errorMsg}${errorDetails ? '\nDetails: ' + JSON.stringify(errorDetails) : ''}`
-        }],
-        isError: true
-      }
+      return toolErrorResult(code, `Error executing ${operation}: ${errorMsg}${errorDetails ? '\nDetails: ' + JSON.stringify(errorDetails) : ''}`)
     }
   }
 
@@ -1678,13 +1738,7 @@ class ZeroDBMCPServer {
         }]
       }
     } catch (error) {
-      return {
-        content: [{
-          type: 'text',
-          text: `Token renewal failed: ${error.message}`
-        }],
-        isError: true
-      }
+      return toolErrorResult('UPSTREAM_ERROR', `Token renewal failed: ${error.message}`)
     }
   }
 
@@ -1742,13 +1796,7 @@ class ZeroDBMCPServer {
       const errorMsg = error.response?.data?.detail || error.response?.data?.message || error.message
       console.error('PostgreSQL provisioning failed:', errorMsg)
 
-      return {
-        content: [{
-          type: 'text',
-          text: `Error provisioning PostgreSQL: ${errorMsg}`
-        }],
-        isError: true
-      }
+      return toolErrorResult(pgErrorCode(error), `Error provisioning PostgreSQL: ${errorMsg}`)
     }
   }
 
@@ -1785,13 +1833,7 @@ class ZeroDBMCPServer {
       const errorMsg = error.response?.data?.detail || error.response?.data?.message || error.message
       console.error('Get PostgreSQL status failed:', errorMsg)
 
-      return {
-        content: [{
-          type: 'text',
-          text: `Error getting PostgreSQL status: ${errorMsg}`
-        }],
-        isError: true
-      }
+      return toolErrorResult(pgErrorCode(error), `Error getting PostgreSQL status: ${errorMsg}`)
     }
   }
 
@@ -1829,13 +1871,7 @@ class ZeroDBMCPServer {
       const errorMsg = error.response?.data?.detail || error.response?.data?.message || error.message
       console.error('Get PostgreSQL connection failed:', errorMsg)
 
-      return {
-        content: [{
-          type: 'text',
-          text: `Error getting PostgreSQL connection: ${errorMsg}`
-        }],
-        isError: true
-      }
+      return toolErrorResult(pgErrorCode(error), `Error getting PostgreSQL connection: ${errorMsg}`)
     }
   }
 
@@ -1873,13 +1909,7 @@ class ZeroDBMCPServer {
       const errorMsg = error.response?.data?.detail || error.response?.data?.message || error.message
       console.error('Get PostgreSQL usage failed:', errorMsg)
 
-      return {
-        content: [{
-          type: 'text',
-          text: `Error getting PostgreSQL usage: ${errorMsg}`
-        }],
-        isError: true
-      }
+      return toolErrorResult(pgErrorCode(error), `Error getting PostgreSQL usage: ${errorMsg}`)
     }
   }
 
@@ -1922,13 +1952,7 @@ class ZeroDBMCPServer {
       const errorMsg = error.response?.data?.detail || error.response?.data?.message || error.message
       console.error('Get PostgreSQL logs failed:', errorMsg)
 
-      return {
-        content: [{
-          type: 'text',
-          text: `Error getting PostgreSQL logs: ${errorMsg}`
-        }],
-        isError: true
-      }
+      return toolErrorResult(pgErrorCode(error), `Error getting PostgreSQL logs: ${errorMsg}`)
     }
   }
 
@@ -1967,13 +1991,7 @@ class ZeroDBMCPServer {
       const errorMsg = error.response?.data?.detail || error.response?.data?.message || error.message
       console.error('PostgreSQL restart failed:', errorMsg)
 
-      return {
-        content: [{
-          type: 'text',
-          text: `Error restarting PostgreSQL: ${errorMsg}`
-        }],
-        isError: true
-      }
+      return toolErrorResult(pgErrorCode(error), `Error restarting PostgreSQL: ${errorMsg}`)
     }
   }
 
@@ -2014,13 +2032,7 @@ class ZeroDBMCPServer {
       const errorMsg = error.response?.data?.detail || error.response?.data?.message || error.message
       console.error('PostgreSQL deletion failed:', errorMsg)
 
-      return {
-        content: [{
-          type: 'text',
-          text: `Error deleting PostgreSQL: ${errorMsg}`
-        }],
-        isError: true
-      }
+      return toolErrorResult(pgErrorCode(error), `Error deleting PostgreSQL: ${errorMsg}`)
     }
   }
 
@@ -2033,7 +2045,7 @@ class ZeroDBMCPServer {
 
       const transport = new StdioServerTransport()
       await this.server.connect(transport)
-      console.error('ZeroDB MCP Server v2.3.0 running on stdio')
+      console.error('ZeroDB MCP Server v2.3.4 running on stdio')
       console.error(`API URL: ${this.apiUrl}`)
       console.error(`Project ID: ${this.projectId}`)
       console.error('Operations: 77 (includes 7 dedicated PostgreSQL management tools, all annotated with MCP hints)')

@@ -1,4 +1,5 @@
 const nock = require('nock')
+const { McpError, ErrorCode } = require('@modelcontextprotocol/sdk/types.js')
 const ZeroDBMCPServer = require('../index')
 
 // Mock console.error to reduce noise in tests
@@ -936,11 +937,94 @@ describe('ZeroDBMCPServer - Tool Routing', () => {
     expect(result.content[0].text).toContain('Token renewed successfully')
   })
 
-  test('should throw error for unknown tool', async () => {
+  test('should throw a protocol-level McpError for unknown tool', async () => {
     const server = createMockedServer()
 
     await expect(server.routeToolCall('unknown_tool', {}))
       .rejects.toThrow('Unknown tool: unknown_tool')
+
+    try {
+      await server.routeToolCall('unknown_tool', {})
+      throw new Error('expected routeToolCall to throw')
+    } catch (error) {
+      expect(error).toBeInstanceOf(McpError)
+      expect(error.code).toBe(ErrorCode.MethodNotFound)
+      expect(error.message).toContain('Unknown tool: unknown_tool')
+    }
+  })
+})
+
+describe('ZeroDBMCPServer - JSON-RPC Error Shape (tools/call handler)', () => {
+  beforeEach(() => {
+    cleanupNock()
+    jest.clearAllMocks()
+  })
+
+  afterEach(() => {
+    cleanupNock()
+  })
+
+  // Simulates exactly what the SDK's Protocol#_onrequest wrapper does with
+  // the registered CallToolRequestSchema handler: a thrown error becomes a
+  // real JSON-RPC error response; a resolved value becomes a JSON-RPC result.
+  const invokeCallToolHandler = async (server, name, args) => {
+    const handler = server.server._requestHandlers.get('tools/call')
+    const request = { method: 'tools/call', params: { name, arguments: args } }
+    try {
+      const result = await handler(request, {})
+      return { jsonrpc: '2.0', id: 1, result }
+    } catch (error) {
+      return {
+        jsonrpc: '2.0',
+        id: 1,
+        error: {
+          code: Number.isSafeInteger(error.code) ? error.code : ErrorCode.InternalError,
+          message: error.message ?? 'Internal error',
+          ...(error.data !== undefined && { data: error.data })
+        }
+      }
+    }
+  }
+
+  test('unknown tool name produces a real JSON-RPC error, not a fake success result', async () => {
+    const server = createMockedServer()
+
+    const response = await invokeCallToolHandler(server, 'nonexistent_tool_xyz', {})
+
+    expect(response.error).toBeDefined()
+    expect(response.result).toBeUndefined()
+    expect(response.error.code).toBe(ErrorCode.MethodNotFound)
+    expect(response.error.message).toContain('Unknown tool: nonexistent_tool_xyz')
+  })
+
+  test('a real tool called with invalid/missing required args stays isError:true with a machine-readable code', async () => {
+    const server = createMockedServer()
+
+    // zerodb_provision_postgres requires project_id; omit it to trigger the
+    // local validation throw inside provisionPostgres().
+    const response = await invokeCallToolHandler(server, 'zerodb_provision_postgres', {})
+
+    expect(response.error).toBeUndefined()
+    expect(response.result).toBeDefined()
+    expect(response.result.isError).toBe(true)
+    expect(response.result.content[0]._meta.code).toBe('VALIDATION_ERROR')
+    expect(response.result.structuredContent.code).toBe('VALIDATION_ERROR')
+    expect(response.result.content[0].text).toContain('project_id is required')
+  })
+
+  test('a real tool call whose upstream request fails stays isError:true with an UPSTREAM_ERROR/INVALID_ARGS code', async () => {
+    const server = createMockedServer()
+
+    nock('https://api.ainative.studio')
+      .post('/v1/public/mcp')
+      .reply(500, { error: 'internal failure' })
+
+    const response = await invokeCallToolHandler(server, 'zerodb_search_vectors', { query: 'test' })
+
+    expect(response.error).toBeUndefined()
+    expect(response.result.isError).toBe(true)
+    expect(response.result.content[0]._meta.code).toBe('UPSTREAM_ERROR')
+    expect(response.result.structuredContent.code).toBe('UPSTREAM_ERROR')
   })
 })
 
