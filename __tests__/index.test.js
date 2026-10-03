@@ -906,10 +906,14 @@ describe('ZeroDBMCPServer - Tool Routing', () => {
     { name: 'zerodb_admin_list_projects', operation: 'admin_list_all_projects' },
     { name: 'zerodb_admin_user_usage', operation: 'admin_get_user_usage' },
     { name: 'zerodb_admin_health', operation: 'admin_system_health' },
-    { name: 'zerodb_admin_optimize', operation: 'admin_optimize_database' }
+    { name: 'zerodb_admin_optimize', operation: 'admin_optimize_database' },
+    { name: 'zerodb_graph_upsert_entity', operation: 'graph_upsert_entity' },
+    { name: 'zerodb_graph_create_edge', operation: 'graph_create_edge' },
+    { name: 'zerodb_graph_traverse', operation: 'graph_traverse' },
+    { name: 'zerodb_graph_rag_search', operation: 'graph_rag_search' }
   ]
 
-  test('should route all 60 tool names correctly', async () => {
+  test('should route all 64 tool names correctly', async () => {
     const server = createMockedServer()
 
     for (const route of allRoutes) {

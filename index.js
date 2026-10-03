@@ -60,9 +60,9 @@ function pgErrorCode (error) {
 }
 
 /**
- * ZeroDB MCP Server v2.2.0
+ * ZeroDB MCP Server v2.4.0
  *
- * Complete implementation with ALL 76 operations across 11 categories:
+ * Complete implementation with ALL 81 operations across 12 categories:
  * - Vector Operations (10): upsert, batch_upsert, search, delete, get, list, stats, create_index, optimize, export
  * - Vector Compression Operations (6): TurboQuant compress, decompress, hybrid_search, optimize, feature_map, kernel_similarity
  * - Table Operations (8): create_table, list_tables, get_table, delete_table, insert_rows, query_rows, update_rows, delete_rows
@@ -74,6 +74,7 @@ function pgErrorCode (error) {
  * - Admin Operations (5): system_stats, list_all_projects, user_usage, system_health, optimize_database
  * - PostgreSQL Operations (6): query, schema_info, create_table, backup, restore, stats
  * - Dedicated PostgreSQL Management (7): provision, status, connection, usage, logs, restart, delete
+ * - Knowledge Graph Operations (4): upsert_entity, create_edge, traverse, graphrag_search (Refs #8341)
  */
 
 class ZeroDBMCPServer {
@@ -107,7 +108,7 @@ class ZeroDBMCPServer {
     this.server = new Server(
       {
         name: 'zerodb-mcp',
-        version: '2.3.5'
+        version: '2.4.0'
       },
       {
         capabilities: {
@@ -1390,6 +1391,71 @@ class ZeroDBMCPServer {
           }
         },
 
+        // ==================== KNOWLEDGE GRAPH OPERATIONS (4) ====================
+        {
+          name: 'zerodb_graph_upsert_entity',
+          description: 'Create or update a knowledge graph entity. Use when you need to add a person, organization, technology, or concept to the context graph, or refresh an existing one. If the entity already exists (matched by canonical_name + entity_type), aliases are merged and memory_count is incremented rather than duplicating the entity.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+          inputSchema: {
+            type: 'object',
+            properties: {
+              canonical_name: { type: 'string', description: 'Entity canonical name' },
+              entity_type: { type: 'string', description: 'Entity type, e.g. person, org, tech, concept' },
+              aliases: { type: 'array', items: { type: 'string' }, description: 'Known aliases for the entity' },
+              properties: { type: 'object', description: 'Arbitrary entity properties' },
+              project_id: { type: 'string', description: 'Optional project ID — when provided, the entity_type is checked against that project\'s ontology and a warning (not a block) is returned if it is not in the allowed list' }
+            },
+            required: ['canonical_name', 'entity_type']
+          }
+        },
+        {
+          name: 'zerodb_graph_create_edge',
+          description: 'Create or strengthen a directed edge (relationship) between two existing entities in the knowledge graph. Use when you have identified a relationship between two entities you have already created with zerodb_graph_upsert_entity. Both entities must already exist — this does not create them. Unlike zerodb_graph_traverse which reads the graph, this writes to it.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+          inputSchema: {
+            type: 'object',
+            properties: {
+              source_name: { type: 'string', description: 'Source entity canonical name (must already exist)' },
+              target_name: { type: 'string', description: 'Target entity canonical name (must already exist)' },
+              predicate: { type: 'string', description: 'Relationship type, e.g. works_at, located_in, depends_on' },
+              confidence: { type: 'number', description: 'Edge confidence (0.0-1.0)', default: 0.8 },
+              properties: { type: 'object', description: 'Arbitrary edge properties' }
+            },
+            required: ['source_name', 'target_name', 'predicate']
+          }
+        },
+        {
+          name: 'zerodb_graph_traverse',
+          description: 'Multi-hop traversal of the knowledge graph starting from an entity. Use when you need to discover what is connected to an entity, directly or transitively, up to a bounded depth. Returns nodes, edges, and paths discovered within max_hops. Unlike zerodb_graph_rag_search which ranks results by relevance to a text query, this is a pure structural walk from a known starting entity.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+          inputSchema: {
+            type: 'object',
+            properties: {
+              entity: { type: 'string', description: 'Entity name or ID to start traversal from' },
+              max_hops: { type: 'number', description: 'Maximum traversal depth (1-5)', default: 3 },
+              predicates: { type: 'array', items: { type: 'string' }, description: 'Optional filter: only follow edges with these predicate types' },
+              min_confidence: { type: 'number', description: 'Minimum edge confidence to follow (0.0-1.0)', default: 0.0 },
+              as_of: { type: 'string', description: 'Optional ISO timestamp — only return edges valid at this point in time' }
+            },
+            required: ['entity']
+          }
+        },
+        {
+          name: 'zerodb_graph_rag_search',
+          description: 'GraphRAG hybrid search — blends vector similarity with knowledge graph proximity. Use when you want search results that are both semantically relevant to a query AND structurally connected in the entity graph, rather than relying on vector similarity alone. graph_weight=0.0 behaves like pure vector search (same as zerodb_semantic_search); graph_weight=1.0 is pure graph proximity ranking; the default 0.3 blends both.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+          inputSchema: {
+            type: 'object',
+            properties: {
+              query: { type: 'string', description: 'Search query text' },
+              limit: { type: 'number', description: 'Maximum results to return', default: 10 },
+              graph_weight: { type: 'number', description: 'Blend factor: 0=pure vector, 1=pure graph proximity', default: 0.3 },
+              max_hops: { type: 'number', description: 'Maximum graph traversal depth used for the graph-proximity component', default: 2 }
+            },
+            required: ['query']
+          }
+        },
+
         // ==================== UTILITY OPERATIONS (1) ====================
         {
           name: 'zerodb_renew_token',
@@ -1583,6 +1649,16 @@ class ZeroDBMCPServer {
         return await this.restartPostgres(args)
       case 'zerodb_delete_postgres':
         return await this.deletePostgres(args)
+
+        // Knowledge Graph Operations
+      case 'zerodb_graph_upsert_entity':
+        return await this.executeOperation('graph_upsert_entity', args)
+      case 'zerodb_graph_create_edge':
+        return await this.executeOperation('graph_create_edge', args)
+      case 'zerodb_graph_traverse':
+        return await this.executeOperation('graph_traverse', args)
+      case 'zerodb_graph_rag_search':
+        return await this.executeOperation('graph_rag_search', args)
 
         // Utility Operations
       case 'zerodb_renew_token':
