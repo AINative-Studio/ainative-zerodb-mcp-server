@@ -910,10 +910,14 @@ describe('ZeroDBMCPServer - Tool Routing', () => {
     { name: 'zerodb_graph_upsert_entity', operation: 'graph_upsert_entity' },
     { name: 'zerodb_graph_create_edge', operation: 'graph_create_edge' },
     { name: 'zerodb_graph_traverse', operation: 'graph_traverse' },
-    { name: 'zerodb_graph_rag_search', operation: 'graph_rag_search' }
+    { name: 'zerodb_graph_rag_search', operation: 'graph_rag_search' },
+    { name: 'zerodb_lakehouse_query', operation: 'lakehouse_query' },
+    { name: 'zerodb_lakehouse_list_tables', operation: 'lakehouse_list_tables' },
+    { name: 'zerodb_lakehouse_catalog_list', operation: 'lakehouse_catalog_list' },
+    { name: 'zerodb_lakehouse_catalog_search', operation: 'lakehouse_catalog_search' }
   ]
 
-  test('should route all 64 tool names correctly', async () => {
+  test('should route all tool names correctly', async () => {
     const server = createMockedServer()
 
     for (const route of allRoutes) {

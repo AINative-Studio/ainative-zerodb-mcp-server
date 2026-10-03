@@ -62,7 +62,7 @@ function pgErrorCode (error) {
 /**
  * ZeroDB MCP Server v2.4.0
  *
- * Complete implementation with ALL 81 operations across 12 categories:
+ * Complete implementation with ALL 85 operations across 13 categories:
  * - Vector Operations (10): upsert, batch_upsert, search, delete, get, list, stats, create_index, optimize, export
  * - Vector Compression Operations (6): TurboQuant compress, decompress, hybrid_search, optimize, feature_map, kernel_similarity
  * - Table Operations (8): create_table, list_tables, get_table, delete_table, insert_rows, query_rows, update_rows, delete_rows
@@ -73,6 +73,7 @@ function pgErrorCode (error) {
  * - Memory Operations (3): store_memory, search_memory, get_context
  * - Admin Operations (5): system_stats, list_all_projects, user_usage, system_health, optimize_database
  * - PostgreSQL Operations (6): query, schema_info, create_table, backup, restore, stats
+ * - Lakehouse Operations (4): query, list_tables, catalog_list, catalog_search (Refs #8342)
  * - Dedicated PostgreSQL Management (7): provision, status, connection, usage, logs, restart, delete
  * - Knowledge Graph Operations (4): upsert_entity, create_edge, traverse, graphrag_search (Refs #8341)
  */
@@ -145,7 +146,7 @@ class ZeroDBMCPServer {
   }
 
   setupTools () {
-    // Define ALL 69 MCP tools for ZeroDB integration (updated from 66 with 3 new embedding tools)
+    // Define ALL 85 MCP tools for ZeroDB integration (+4 lakehouse Refs #8342, +4 knowledge graph Refs #8341)
     this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
       tools: [
         // ==================== EMBEDDING OPERATIONS (3) ====================
@@ -1262,6 +1263,56 @@ class ZeroDBMCPServer {
           }
         },
 
+        // ==================== LAKEHOUSE OPERATIONS (4) ====================
+        {
+          name: 'zerodb_lakehouse_query',
+          description: 'Execute a read-only (SELECT/WITH only) SQL query against the project lakehouse via DuckDB over Parquet files in object storage. Use when you need to analyze or inspect data that has been ingested into the lakehouse. Destructive SQL (INSERT/UPDATE/DELETE/DROP/etc.) is rejected.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+          inputSchema: {
+            type: 'object',
+            properties: {
+              project_id: { type: 'string', description: 'ZeroDB project ID' },
+              sql: { type: 'string', description: 'SQL query (SELECT or WITH only)' },
+              max_rows: { type: 'number', description: 'Maximum rows to return', default: 1000 }
+            },
+            required: ['project_id', 'sql']
+          }
+        },
+        {
+          name: 'zerodb_lakehouse_list_tables',
+          description: 'List the lakehouse tables (sensor-type partitions) available for a project, with file counts, total bytes, and last-modified time. Use when you need to discover what data exists in the lakehouse before querying it.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+          inputSchema: {
+            type: 'object',
+            properties: {
+              project_id: { type: 'string', description: 'ZeroDB project ID' }
+            },
+            required: ['project_id']
+          }
+        },
+        {
+          name: 'zerodb_lakehouse_catalog_list',
+          description: 'List all partitions in the public lakehouse data catalog, with file counts and sizes. Use when you need a platform-wide overview of available lakehouse data, independent of any single project. No project_id required.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+          inputSchema: {
+            type: 'object',
+            properties: {},
+            required: []
+          }
+        },
+        {
+          name: 'zerodb_lakehouse_catalog_search',
+          description: 'Search the public lakehouse data catalog by partition name. Use when you need to find which lakehouse partitions match a keyword (e.g. "weather", "ais") before querying them.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+          inputSchema: {
+            type: 'object',
+            properties: {
+              q: { type: 'string', description: 'Search term to match against partition names' }
+            },
+            required: ['q']
+          }
+        },
+
         // ==================== DEDICATED POSTGRESQL MANAGEMENT (7) ====================
         {
           name: 'zerodb_provision_postgres',
@@ -1633,6 +1684,16 @@ class ZeroDBMCPServer {
         return await this.executeOperation('postgres_restore', args)
       case 'zerodb_postgres_stats':
         return await this.executeOperation('postgres_stats', args)
+
+        // Lakehouse Operations
+      case 'zerodb_lakehouse_query':
+        return await this.executeOperation('lakehouse_query', args)
+      case 'zerodb_lakehouse_list_tables':
+        return await this.executeOperation('lakehouse_list_tables', args)
+      case 'zerodb_lakehouse_catalog_list':
+        return await this.executeOperation('lakehouse_catalog_list', args)
+      case 'zerodb_lakehouse_catalog_search':
+        return await this.executeOperation('lakehouse_catalog_search', args)
 
         // Dedicated PostgreSQL Management Operations
       case 'zerodb_provision_postgres':
