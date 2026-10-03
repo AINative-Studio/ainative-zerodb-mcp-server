@@ -5,6 +5,11 @@ All notable changes to the ZeroDB MCP Server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2026-10-03
+
+### Added
+- **Knowledge Graph operations (4 new tools)**: `zerodb_graph_upsert_entity`, `zerodb_graph_create_edge`, `zerodb_graph_traverse`, `zerodb_graph_rag_search`. Bridges the backend's context-graph API (entity/edge CRUD, multi-hop traversal, GraphRAG hybrid search) into this MCP server, which previously had zero coverage for it (AINative-Studio/core#8341). This is the highest-value subset named in that issue; full parity with the backend's full route set is a follow-up. Requires a core backend running the corresponding `graph_*` operation handlers (AINative-Studio/core#8341) — calling these tools against an older backend returns an "operation not recognized" error.
+
 ## [2.3.5] - 2026-09-25
 
 ### Changed

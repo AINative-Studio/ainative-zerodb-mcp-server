@@ -2166,6 +2166,91 @@ Get comprehensive PostgreSQL database statistics including performance metrics.
 
 ---
 
+### Knowledge Graph Operations
+
+Entity/relationship graph on top of your ZeroDB memories — create entities, link them, walk the graph, and run hybrid vector+graph search. Requires a core backend version that includes the `graph_*` MCP operations (AINative-Studio/core#8341); an older backend returns an "operation not recognized" error for these four tools.
+
+#### `zerodb_graph_upsert_entity`
+Create or update a knowledge graph entity. If an entity with the same `canonical_name` + `entity_type` already exists, its aliases are merged and `memory_count` is incremented instead of creating a duplicate.
+
+**Parameters:**
+- `canonical_name` (string, required) - Entity canonical name
+- `entity_type` (string, required) - Entity type, e.g. `person`, `org`, `tech`, `concept`
+- `aliases` (array[string], optional) - Known aliases for the entity
+- `properties` (object, optional) - Arbitrary entity properties
+- `project_id` (string, optional) - When provided, `entity_type` is checked against that project's ontology; a warning (not a block) is returned if it is not in the allowed list
+
+**Returns:**
+```json
+{
+  "id": "ent_abc123",
+  "canonical_name": "Alice Johnson",
+  "entity_type": "person",
+  "aliases": ["Alice"],
+  "properties": { "role": "engineer" },
+  "memory_count": 1,
+  "status": "created"
+}
+```
+
+#### `zerodb_graph_create_edge`
+Create or strengthen a directed edge (relationship) between two entities that already exist in the graph. Does not create the entities — use `zerodb_graph_upsert_entity` first.
+
+**Parameters:**
+- `source_name` (string, required) - Source entity canonical name (must already exist)
+- `target_name` (string, required) - Target entity canonical name (must already exist)
+- `predicate` (string, required) - Relationship type, e.g. `works_at`, `located_in`, `depends_on`
+- `confidence` (number, optional) - Edge confidence 0.0-1.0, default: 0.8
+- `properties` (object, optional) - Arbitrary edge properties
+
+**Example:**
+```javascript
+{
+  "source_name": "Alice Johnson",
+  "target_name": "Acme Corp",
+  "predicate": "works_at",
+  "confidence": 0.9
+}
+```
+
+#### `zerodb_graph_traverse`
+Multi-hop traversal of the knowledge graph starting from an entity. Returns nodes, edges, and paths discovered within `max_hops`.
+
+**Parameters:**
+- `entity` (string, required) - Entity name or ID to start traversal from
+- `max_hops` (number, optional) - Maximum traversal depth (1-5), default: 3
+- `predicates` (array[string], optional) - Only follow edges with these predicate types
+- `min_confidence` (number, optional) - Minimum edge confidence to follow, default: 0.0
+- `as_of` (string, optional) - ISO timestamp — only return edges valid at this point in time
+
+**Example:**
+```javascript
+{
+  "entity": "Alice Johnson",
+  "max_hops": 2
+}
+```
+
+#### `zerodb_graph_rag_search`
+GraphRAG hybrid search — blends vector similarity with knowledge graph proximity. `graph_weight=0.0` behaves like pure vector search; `graph_weight=1.0` is pure graph proximity ranking; the default `0.3` blends both.
+
+**Parameters:**
+- `query` (string, required) - Search query text
+- `limit` (number, optional) - Maximum results to return, default: 10
+- `graph_weight` (number, optional) - Blend factor: 0=pure vector, 1=pure graph proximity, default: 0.3
+- `max_hops` (number, optional) - Maximum graph traversal depth for the graph-proximity component, default: 2
+
+**Example:**
+```javascript
+{
+  "query": "pricing strategy",
+  "limit": 5,
+  "graph_weight": 0.5
+}
+```
+
+---
+
 ## Configuration
 
 ### Environment Variables
