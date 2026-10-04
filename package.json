@@ -1,6 +1,6 @@
 {
   "name": "ainative-zerodb-mcp-server",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "description": "AINative ZeroDB MCP Server - 81 operations for vector search, TurboQuant vector compression (PolarQuant + QJL), NoSQL, dedicated PostgreSQL management, files, events, RLHF, knowledge graph (entities, edges, traversal, GraphRAG), and persistent memory for AI agents with enterprise security. All tools annotated with readOnly/destructive/idempotent hints per MCP spec 2025-03-26. Production-ready MCP integration for AI assistants.",
   "main": "index.js",
   "type": "commonjs",
@@ -57,7 +57,15 @@
     "1536-dimensions",
     "automatic-token-renewal",
     "session-management",
-    "namespace-isolation"
+    "namespace-isolation",
+    "knowledge-graph",
+    "graphrag",
+    "graph-rag",
+    "entity-graph",
+    "graph-database",
+    "ontology",
+    "graph-traversal",
+    "multi-hop-reasoning"
   ],
   "author": {
     "name": "AINative Studio",
