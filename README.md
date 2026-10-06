@@ -2249,6 +2249,89 @@ GraphRAG hybrid search — blends vector similarity with knowledge graph proximi
 }
 ```
 
+#### `zerodb_graph_list_entities`
+List knowledge graph entities for the current user, optionally filtered by entity type, paginated by `memory_count` descending.
+
+**Parameters:**
+- `entity_type` (string, optional) - Filter by entity type, e.g. `person`, `org`, `tech`, `concept`
+- `limit` (number, optional) - Max results, default: 50
+- `offset` (number, optional) - Pagination offset, default: 0
+
+#### `zerodb_graph_neighbors`
+Get the direct (1-hop) neighbors of an entity, with relationship and entity metadata. Bounded to a single hop — use `zerodb_graph_traverse` for a deeper walk.
+
+**Parameters:**
+- `entity_name` (string, required) - Entity name to find neighbors of (must already exist)
+- `limit` (number, optional) - Max neighbors to return, default: 50
+
+#### `zerodb_graph_stats`
+Graph analytics for the current user: node count, edge count, density, entity-type and predicate distributions, and top entities by connectivity. No parameters.
+
+#### `zerodb_graph_merge_entities`
+Merge duplicate entities into a canonical entity, moving all edges and aliases from the merge targets and deleting the duplicates. **Destructive** — cannot be undone.
+
+**Parameters:**
+- `canonical` (string, required) - Canonical entity name to keep
+- `merge` (array[string], required) - Entity names to merge into the canonical entity and delete
+
+#### `zerodb_graph_ontology_get`
+Get the ontology (allowed entity types, predicates per type, constraints) for a project. Returns a not-found error if no ontology is defined yet.
+
+**Parameters:**
+- `project_id` (string, required) - Project UUID
+
+#### `zerodb_graph_ontology_upsert`
+Create or update a project's ontology. Version is auto-incremented on update.
+
+**Parameters:**
+- `project_id` (string, required) - Project UUID
+- `entity_types` (array[string], required) - Allowed entity types for this project
+- `predicates` (object, optional) - Allowed predicates per entity type, e.g. `{"customer": {"places": "order"}}`
+- `constraints` (object, optional) - Optional additional constraints
+
+#### `zerodb_graph_ontology_infer`
+Infer a candidate ontology from existing graph data by analyzing entity-type and predicate frequency. When `project_id` is given, also returns a diff against that project's current ontology.
+
+**Parameters:**
+- `min_entity_count` (number, optional) - Minimum entity-type occurrences to suggest it, default: 3
+- `min_predicate_count` (number, optional) - Minimum predicate occurrences to suggest it, default: 2
+- `project_id` (string, optional) - Project UUID to diff against
+
+#### `zerodb_graph_ontology_suggestions`
+Human-readable, actionable suggestions for improving a project's ontology (reclassify generic-typed entities, missing predicates, undeclared entity types).
+
+**Parameters:**
+- `project_id` (string, optional) - Project UUID to scope suggestions to
+
+#### `zerodb_graph_contradictions_list`
+List contradictions: edges superseded because a newer edge contradicted an existing relationship on the same (source, predicate) pair.
+
+**Parameters:**
+- `limit` (number, optional) - Max contradictions to return, default: 50
+
+#### `zerodb_graph_contradictions_resolve`
+Resolve a contradiction on a superseded edge found via `zerodb_graph_contradictions_list`.
+
+**Parameters:**
+- `edge_id` (string, required) - UUID of the superseded (old) edge to resolve
+- `action` (string, required) - One of `accept_new` (no-op, keeps current state), `keep_both` (restores the old edge), `reject_new` (deletes the new edge and restores the old one)
+
+#### `zerodb_graph_centrality`
+Entities ranked by degree centrality (total/in/out degree, hub score, critical-node flag). Requires the `graph.compute_centrality` background task to have run at least once — returns an empty list otherwise.
+
+**Parameters:**
+- `entity_type` (string, optional) - Filter by entity type
+- `limit` (number, optional) - Max entities to return, default: 50
+- `critical_only` (boolean, optional) - Only return entities flagged as critical infrastructure nodes, default: false
+
+#### `zerodb_graph_export`
+Export the knowledge graph as JSON (nodes + edges, D3/Cytoscape-compatible). For GEXF (Gephi), use the underlying HTTP export route directly.
+
+**Parameters:**
+- `entity_type` (string, optional) - Filter by entity type
+- `limit` (number, optional) - Max entities to export, default: 5000
+- `min_confidence` (number, optional) - Minimum edge confidence to include, default: 0.0
+
 ---
 
 ## Configuration
