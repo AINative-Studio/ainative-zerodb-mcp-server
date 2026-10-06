@@ -5,6 +5,11 @@ All notable changes to the ZeroDB MCP Server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Knowledge Graph operations Phase 2 (12 new tools)**: `zerodb_graph_list_entities`, `zerodb_graph_neighbors`, `zerodb_graph_stats`, `zerodb_graph_merge_entities`, `zerodb_graph_ontology_get`, `zerodb_graph_ontology_upsert`, `zerodb_graph_ontology_infer`, `zerodb_graph_ontology_suggestions`, `zerodb_graph_contradictions_list`, `zerodb_graph_contradictions_resolve`, `zerodb_graph_centrality`, `zerodb_graph_export`. Follow-up to AINative-Studio/core#8412/#8341, which covered 4 of 29 context-graph routes. This PR covers ontology CRUD, contradiction detection/resolution, centrality ranking, graph export, and a handful of simple entity/stats operations — 16 of 29 routes now have MCP coverage. SPARQL, Vault-LD/RDF export-import-resolve-validate-materialize, DPROD descriptor, entity resolve, edge feedback, and connector health remain uncovered (AINative-Studio/core#8432). Requires a core backend running the corresponding `graph_*` operation handlers (AINative-Studio/core#8432) — calling these tools against an older backend returns an "operation not recognized" error.
+
 ## [2.4.0] - 2026-10-03
 
 ### Added

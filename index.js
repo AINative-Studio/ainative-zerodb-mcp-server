@@ -1507,6 +1507,164 @@ class ZeroDBMCPServer {
           }
         },
 
+        // ==================== KNOWLEDGE GRAPH OPERATIONS PHASE 2 (12) ====================
+        {
+          name: 'zerodb_graph_list_entities',
+          description: 'List knowledge graph entities for the current user, optionally filtered by entity type, paginated by memory_count descending. Use when you need to browse or audit what entities already exist in the graph rather than looking up one specific entity by name (use zerodb_graph_resolve-style lookup via traverse/neighbors for that).',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+          inputSchema: {
+            type: 'object',
+            properties: {
+              entity_type: { type: 'string', description: 'Filter by entity type, e.g. person, org, tech, concept' },
+              limit: { type: 'number', description: 'Max results', default: 50 },
+              offset: { type: 'number', description: 'Pagination offset', default: 0 }
+            },
+            required: []
+          }
+        },
+        {
+          name: 'zerodb_graph_neighbors',
+          description: 'Get the direct (1-hop) neighbors of a knowledge graph entity, with relationship and entity metadata. Use when you need everything directly connected to one entity without a deeper multi-hop walk. Unlike zerodb_graph_traverse, this is bounded to a single hop and does not support predicate/confidence filtering.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+          inputSchema: {
+            type: 'object',
+            properties: {
+              entity_name: { type: 'string', description: 'Entity name to find neighbors of (must already exist)' },
+              limit: { type: 'number', description: 'Max neighbors to return', default: 50 }
+            },
+            required: ['entity_name']
+          }
+        },
+        {
+          name: 'zerodb_graph_stats',
+          description: 'Get knowledge graph analytics for the current user: node count, edge count, graph density, entity-type and predicate distributions, and top entities by connectivity. Use for a high-level health/size check of the graph before deciding whether to traverse, export, or run centrality analysis.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+          inputSchema: {
+            type: 'object',
+            properties: {},
+            required: []
+          }
+        },
+        {
+          name: 'zerodb_graph_merge_entities',
+          description: 'Merge duplicate entities into a single canonical entity, moving all edges and aliases from the merge targets onto the canonical entity and deleting the duplicates. Use when you have discovered that two or more entities in the graph actually refer to the same real-world thing (e.g. "Acme" and "Acme Inc"). This is destructive to the merged (non-canonical) entities — it cannot be undone.',
+          annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+          inputSchema: {
+            type: 'object',
+            properties: {
+              canonical: { type: 'string', description: 'Canonical entity name to keep' },
+              merge: { type: 'array', items: { type: 'string' }, description: 'Entity names to merge into the canonical entity and delete' }
+            },
+            required: ['canonical', 'merge']
+          }
+        },
+        {
+          name: 'zerodb_graph_ontology_get',
+          description: 'Get the ontology definition (allowed entity types, predicates per type, and constraints) for a project. Use before creating entities/edges in a project that has an ontology, so you know which entity_type and predicate values are expected. Returns a not-found error if the project has no ontology defined yet — use zerodb_graph_ontology_infer to propose one from existing data.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+          inputSchema: {
+            type: 'object',
+            properties: {
+              project_id: { type: 'string', description: 'Project UUID' }
+            },
+            required: ['project_id']
+          }
+        },
+        {
+          name: 'zerodb_graph_ontology_upsert',
+          description: 'Create or update the ontology for a project: the allowed entity types, allowed predicates per entity type, and optional constraints. Use when you are defining or revising the schema that governs what entities/relationships are expected in a project\'s graph. Version is auto-incremented on update — this does not retroactively reclassify existing entities (use zerodb_graph_ontology_infer + applying its output for that).',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+          inputSchema: {
+            type: 'object',
+            properties: {
+              project_id: { type: 'string', description: 'Project UUID' },
+              entity_types: { type: 'array', items: { type: 'string' }, description: 'Allowed entity types for this project' },
+              predicates: { type: 'object', description: "Allowed predicates per entity type, e.g. {'customer': {'places': 'order'}}" },
+              constraints: { type: 'object', description: 'Optional additional constraints' }
+            },
+            required: ['project_id', 'entity_types']
+          }
+        },
+        {
+          name: 'zerodb_graph_ontology_infer',
+          description: 'Infer a candidate ontology from the user\'s existing graph data by analyzing entity-type and predicate frequency patterns. Use when a project has no ontology yet, or you want to propose updates based on what has actually been recorded in the graph so far. When project_id is given, also returns a diff against that project\'s current ontology (new types/predicates not yet captured). Filters out generic placeholder types (object, thing, unknown).',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+          inputSchema: {
+            type: 'object',
+            properties: {
+              min_entity_count: { type: 'number', description: 'Minimum entity-type occurrences to suggest it', default: 3 },
+              min_predicate_count: { type: 'number', description: 'Minimum predicate occurrences to suggest it', default: 2 },
+              project_id: { type: 'string', description: 'Optional project UUID to diff the inferred ontology against' }
+            },
+            required: []
+          }
+        },
+        {
+          name: 'zerodb_graph_ontology_suggestions',
+          description: 'Get human-readable, actionable suggestions for improving a project\'s ontology: entities with generic types that should be reclassified, frequently-used predicates missing from the ontology, and entity types present in the data but not yet declared. Use this when you want a quick, readable punch list rather than the raw inference output from zerodb_graph_ontology_infer.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+          inputSchema: {
+            type: 'object',
+            properties: {
+              project_id: { type: 'string', description: 'Optional project UUID to scope suggestions to' }
+            },
+            required: []
+          }
+        },
+        {
+          name: 'zerodb_graph_contradictions_list',
+          description: 'List contradictions in the knowledge graph: edges that were superseded because a newer edge contradicted an existing relationship on the same (source, predicate) pair. Use this to audit where the graph has recorded conflicting facts over time, before deciding how to resolve each one with zerodb_graph_contradictions_resolve.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+          inputSchema: {
+            type: 'object',
+            properties: {
+              limit: { type: 'number', description: 'Max contradictions to return', default: 50 }
+            },
+            required: []
+          }
+        },
+        {
+          name: 'zerodb_graph_contradictions_resolve',
+          description: 'Resolve a contradiction on a superseded edge, found via zerodb_graph_contradictions_list. action="accept_new" keeps the current state (default/no-op — the old edge stays superseded); action="keep_both" restores the old edge so both are active simultaneously; action="reject_new" deletes the new edge and restores the old one. Use this once you have determined which version of a contradicted fact is correct.',
+          annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+          inputSchema: {
+            type: 'object',
+            properties: {
+              edge_id: { type: 'string', description: 'UUID of the superseded (old) edge to resolve' },
+              action: { type: 'string', enum: ['accept_new', 'keep_both', 'reject_new'], description: 'Resolution action' }
+            },
+            required: ['edge_id', 'action']
+          }
+        },
+        {
+          name: 'zerodb_graph_centrality',
+          description: 'Get entities ranked by degree centrality (total/in/out degree, hub score, critical-node flag). Use to find the most structurally important or connected entities in the graph. Requires the graph.compute_centrality background task to have run at least once for this user — returns an empty list otherwise, not an error.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+          inputSchema: {
+            type: 'object',
+            properties: {
+              entity_type: { type: 'string', description: 'Filter by entity type' },
+              limit: { type: 'number', description: 'Max entities to return', default: 50 },
+              critical_only: { type: 'boolean', description: 'Only return entities flagged as critical infrastructure nodes', default: false }
+            },
+            required: []
+          }
+        },
+        {
+          name: 'zerodb_graph_export',
+          description: 'Export the knowledge graph as JSON (nodes + edges, D3/Cytoscape-compatible shape). Use when you need the whole graph (or a filtered slice of it) to hand to a visualization, external analysis tool, or another agent, rather than exploring it interactively via traverse/neighbors. For the GEXF (Gephi) format, use the underlying HTTP export route directly — this tool only returns the JSON shape.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+          inputSchema: {
+            type: 'object',
+            properties: {
+              entity_type: { type: 'string', description: 'Filter by entity type' },
+              limit: { type: 'number', description: 'Max entities to export', default: 5000 },
+              min_confidence: { type: 'number', description: 'Minimum edge confidence to include', default: 0.0 }
+            },
+            required: []
+          }
+        },
+
         // ==================== UTILITY OPERATIONS (1) ====================
         {
           name: 'zerodb_renew_token',
@@ -1720,6 +1878,32 @@ class ZeroDBMCPServer {
         return await this.executeOperation('graph_traverse', args)
       case 'zerodb_graph_rag_search':
         return await this.executeOperation('graph_rag_search', args)
+
+        // Knowledge Graph Operations Phase 2
+      case 'zerodb_graph_list_entities':
+        return await this.executeOperation('graph_list_entities', args)
+      case 'zerodb_graph_neighbors':
+        return await this.executeOperation('graph_neighbors', args)
+      case 'zerodb_graph_stats':
+        return await this.executeOperation('graph_stats', args)
+      case 'zerodb_graph_merge_entities':
+        return await this.executeOperation('graph_merge_entities', args)
+      case 'zerodb_graph_ontology_get':
+        return await this.executeOperation('graph_ontology_get', args)
+      case 'zerodb_graph_ontology_upsert':
+        return await this.executeOperation('graph_ontology_upsert', args)
+      case 'zerodb_graph_ontology_infer':
+        return await this.executeOperation('graph_ontology_infer', args)
+      case 'zerodb_graph_ontology_suggestions':
+        return await this.executeOperation('graph_ontology_suggestions', args)
+      case 'zerodb_graph_contradictions_list':
+        return await this.executeOperation('graph_contradictions_list', args)
+      case 'zerodb_graph_contradictions_resolve':
+        return await this.executeOperation('graph_contradictions_resolve', args)
+      case 'zerodb_graph_centrality':
+        return await this.executeOperation('graph_centrality', args)
+      case 'zerodb_graph_export':
+        return await this.executeOperation('graph_export', args)
 
         // Utility Operations
       case 'zerodb_renew_token':
