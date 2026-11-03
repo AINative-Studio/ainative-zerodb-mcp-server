@@ -5,6 +5,11 @@ All notable changes to the ZeroDB MCP Server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.1] - 2026-11-02
+
+### Fixed
+- **Cold start with no credentials crashed before the MCP handshake instead of auto-provisioning (Refs AINative-Studio/ZeroDB.AINative.Studio#284)**: running `npx ainative-zerodb-mcp-server` (the exact `install` command advertised at `https://zerodb.ainative.studio/.well-known/mcp.json`) with no `ZERODB_API_KEY`/`ZERODB_USERNAME`+`ZERODB_PASSWORD` set threw an uncaught `SECURITY ERROR` synchronously in the `ZeroDBMCPServer` constructor, before the stdio MCP transport ever connected and before a single byte reached stdout. To any client — including ora.ai's AI-readiness scan agent, which hit this exactly and scored "can an agent use you reliably in production?" at 0/100 — this is indistinguishable from a dead/unreachable server. Added `autoProvisionCredentials()`, called once from the CLI entry point before constructing the server, which requests a free instant-db project/API key from `POST /api/v1/public/instant-db` (bounded by a 10s timeout to avoid the hang class fixed in the sibling package `ainative-zerodb-memory-mcp` PR #38) and only falls through to the existing honest error if that also fails. Mirrors the already-shipped, already-proven auto-provisioning fallback in `ainative-zerodb-memory-mcp@1.2.11`. `ZeroDBMCPServer`'s own synchronous "throw if no credentials" constructor contract is unchanged, so direct embedders/tests are unaffected.
+
 ## [Unreleased]
 
 ### Added
