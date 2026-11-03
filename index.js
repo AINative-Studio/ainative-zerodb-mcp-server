@@ -5,6 +5,91 @@ const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio
 const { CallToolRequestSchema, ListToolsRequestSchema } = require('@modelcontextprotocol/sdk/types.js')
 const { McpError, ErrorCode } = require('@modelcontextprotocol/sdk/types.js')
 const axios = require('axios')
+const https = require('https')
+
+/**
+ * Auto-provision a free ZeroDB instant-db project when no credentials are
+ * configured, so a cold `npx ainative-zerodb-mcp-server` (no ZERODB_API_KEY
+ * or ZERODB_USERNAME/PASSWORD set) can still start instead of crashing.
+ *
+ * Refs #284 (ZeroDB.AINative.Studio): ora.ai's scan agent invoked the exact
+ * `install` command advertised in /.well-known/mcp.json with no pre-configured
+ * API key. Before this fix, `new ZeroDBMCPServer()` threw synchronously —
+ * before the stdio MCP transport ever connected and before a single byte was
+ * written to stdout — which is indistinguishable, from the caller's side,
+ * from "the MCP server connection failed." This mirrors the proven
+ * auto-provisioning fallback already shipped in the sibling package
+ * ainative-zerodb-memory-mcp@1.2.11.
+ *
+ * Deliberately NOT called from inside the ZeroDBMCPServer constructor: the
+ * class keeps its existing synchronous "throw if no credentials" contract
+ * (relied on by the Initialization test suite), and callers that construct
+ * ZeroDBMCPServer directly with env vars already set (tests, embedders)
+ * are unaffected. Only the CLI entry point below calls this, before
+ * constructing the server.
+ *
+ * On any failure (network error, non-200, or timeout) this resolves without
+ * throwing and leaves process.env untouched, so the caller falls through to
+ * the existing honest "SECURITY ERROR" message instead of a silent hang —
+ * this must never hang indefinitely (that exact bug, an unbounded auth/
+ * provisioning HTTP call, was fixed in the sibling memory-mcp package via
+ * PR #38; this helper uses an explicit bounded timeout to avoid
+ * reintroducing it here).
+ *
+ * @returns {Promise<void>}
+ */
+async function autoProvisionCredentials () {
+  if (process.env.ZERODB_API_KEY || process.env.ZERODB_API_TOKEN) return
+  if (process.env.ZERODB_USERNAME && process.env.ZERODB_PASSWORD) return
+
+  console.error('\n  No credentials found — provisioning a free ZeroDB instance...')
+
+  try {
+    const creds = await new Promise((resolve, reject) => {
+      const body = JSON.stringify({ agree_terms: true })
+      const req = https.request({
+        hostname: 'api.ainative.studio',
+        port: 443,
+        path: '/api/v1/public/instant-db',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        timeout: 10000
+      }, (res) => {
+        let data = ''
+        res.on('data', chunk => { data += chunk })
+        res.on('end', () => {
+          if (res.statusCode === 200) {
+            try {
+              resolve(JSON.parse(data))
+            } catch (parseErr) {
+              reject(parseErr)
+            }
+          } else {
+            reject(new Error(`HTTP ${res.statusCode}`))
+          }
+        })
+      })
+      req.on('timeout', () => {
+        req.destroy(new Error('instant-db provisioning request timed out'))
+      })
+      req.on('error', reject)
+      req.write(body)
+      req.end()
+    })
+
+    process.env.ZERODB_API_KEY = creds.api_key
+    process.env.ZERODB_PROJECT_ID = creds.project_id
+
+    console.error(`  ✅ Auto-provisioned! Project: ${creds.project_id}`)
+    console.error(`  API Key: ${String(creds.api_key).slice(0, 16)}...`)
+    if (creds.expires_at) console.error(`  Expires: ${creds.expires_at}`)
+    if (creds.claim_url) console.error(`  Claim at: ${creds.claim_url}`)
+    console.error('')
+  } catch (provisionErr) {
+    console.error(`  ⚠️  Auto-provision failed: ${provisionErr.message}`)
+    console.error('  Set ZERODB_API_KEY, or run: npx zerodb-cli init\n')
+  }
+}
 
 /**
  * Build a spec-compliant tool-execution-failure result.
@@ -2385,8 +2470,16 @@ class ZeroDBMCPServer {
 
 // Start the server
 if (require.main === module) {
-  const server = new ZeroDBMCPServer()
-  server.start().catch(console.error)
+  autoProvisionCredentials()
+    .then(() => {
+      const server = new ZeroDBMCPServer()
+      return server.start()
+    })
+    .catch((error) => {
+      console.error('Failed to start ZeroDB MCP Server:', error.message)
+      process.exit(1)
+    })
 }
 
 module.exports = ZeroDBMCPServer
+module.exports.autoProvisionCredentials = autoProvisionCredentials

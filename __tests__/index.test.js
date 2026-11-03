@@ -1,6 +1,7 @@
 const nock = require('nock')
 const { McpError, ErrorCode } = require('@modelcontextprotocol/sdk/types.js')
 const ZeroDBMCPServer = require('../index')
+const { autoProvisionCredentials } = require('../index')
 
 // Mock console.error to reduce noise in tests
 global.console.error = jest.fn()
@@ -1147,4 +1148,150 @@ describe('ZeroDBMCPServer - Additional Coverage', () => {
 
     expect(capturedBody.params.project_id).toBe(TEST_CONFIG.projectId)
   })
+})
+
+// Refs #284 (ZeroDB.AINative.Studio): cold `npx ainative-zerodb-mcp-server` with
+// no ZERODB_API_KEY/ZERODB_USERNAME+PASSWORD env vars crashes synchronously in
+// the constructor with an uncaught "SECURITY ERROR", before the stdio MCP
+// transport ever connects and before anything is written to stdout. From the
+// perspective of an agent/scanner invoking the exact `install` command
+// advertised in https://zerodb.ainative.studio/.well-known/mcp.json, this is
+// indistinguishable from "the MCP server connection failed" — ora.ai's scan
+// agent hit exactly this and scored agent-readiness sub-question 6 at 0/100.
+//
+// Fix: a module-level autoProvisionCredentials() helper, invoked ONLY from the
+// CLI entry point (require.main === module) before constructing
+// ZeroDBMCPServer — mirroring the already-shipped, already-proven pattern in
+// the sibling package ainative-zerodb-memory-mcp@1.2.11. The ZeroDBMCPServer
+// class itself keeps its existing synchronous "throw if no credentials"
+// contract (required by the Initialization describe block above), so this
+// fix changes only the CLI bootstrap, not the class's public behavior.
+describe('autoProvisionCredentials - cold start with no credentials (Refs #284)', () => {
+  const ORIGINAL_ENV = { ...process.env }
+
+  beforeEach(() => {
+    cleanupNock()
+    jest.clearAllMocks()
+    delete process.env.ZERODB_API_KEY
+    delete process.env.ZERODB_API_TOKEN
+    delete process.env.ZERODB_USERNAME
+    delete process.env.ZERODB_PASSWORD
+    delete process.env.ZERODB_PROJECT_ID
+  })
+
+  afterEach(() => {
+    cleanupNock()
+    process.env = { ...ORIGINAL_ENV }
+  })
+
+  test('is a function exported from index.js so the CLI entry point can call it', () => {
+    expect(typeof autoProvisionCredentials).toBe('function')
+  })
+
+  test('provisions a free instant-db key when no credentials are set, so the server can start', async () => {
+    nock('https://api.ainative.studio')
+      .post('/api/v1/public/instant-db')
+      .reply(200, {
+        api_key: 'tmp_test_key_abc123',
+        project_id: 'instant-project-456',
+        expires_at: '2026-11-06T00:00:00Z',
+        claim_url: 'https://www.ainative.studio/claim?token=abc'
+      })
+
+    await autoProvisionCredentials()
+
+    expect(process.env.ZERODB_API_KEY).toBe('tmp_test_key_abc123')
+    expect(process.env.ZERODB_PROJECT_ID).toBe('instant-project-456')
+    // With credentials now in process.env, the previously-throwing
+    // constructor must succeed.
+    expect(() => new ZeroDBMCPServer()).not.toThrow()
+  })
+
+  test('does nothing when ZERODB_API_KEY is already set (never override explicit config)', async () => {
+    process.env.ZERODB_API_KEY = 'already-configured-key'
+    const scope = nock('https://api.ainative.studio')
+      .post('/api/v1/public/instant-db')
+      .reply(200, { api_key: 'should-not-be-used', project_id: 'x' })
+
+    await autoProvisionCredentials()
+
+    expect(process.env.ZERODB_API_KEY).toBe('already-configured-key')
+    expect(scope.isDone()).toBe(false)
+  })
+
+  test('does nothing when ZERODB_USERNAME/PASSWORD are already set', async () => {
+    process.env.ZERODB_USERNAME = 'user@example.com'
+    process.env.ZERODB_PASSWORD = 'pw'
+    const scope = nock('https://api.ainative.studio')
+      .post('/api/v1/public/instant-db')
+      .reply(200, { api_key: 'should-not-be-used', project_id: 'x' })
+
+    await autoProvisionCredentials()
+
+    expect(scope.isDone()).toBe(false)
+  })
+
+  test('never hangs: enforces a bounded timeout against a stuck/slow provisioning call', async () => {
+    // Regression guard for the exact bug class fixed in the sibling package
+    // ainative-zerodb-memory-mcp PR #38: a provisioning HTTP call with no
+    // timeout can hang indefinitely, which looks identical to a dead
+    // connection from the caller's side. autoProvisionCredentials must not
+    // reintroduce that bug here.
+    nock('https://api.ainative.studio')
+      .post('/api/v1/public/instant-db')
+      .delay(60000)
+      .reply(200, { api_key: 'too-late', project_id: 'too-late' })
+
+    const start = Date.now()
+    await autoProvisionCredentials()
+    const elapsed = Date.now() - start
+
+    expect(elapsed).toBeLessThan(15000)
+    // Provisioning failed/timed out — credentials must remain unset so the
+    // caller can fall through to its existing honest "SECURITY ERROR".
+    expect(process.env.ZERODB_API_KEY).toBeUndefined()
+  }, 20000)
+
+  test('leaves credentials unset (not throwing) when the provisioning endpoint errors, so the caller keeps its existing honest error path', async () => {
+    nock('https://api.ainative.studio')
+      .post('/api/v1/public/instant-db')
+      .reply(500, { detail: 'boom' })
+
+    await expect(autoProvisionCredentials()).resolves.not.toThrow()
+    expect(process.env.ZERODB_API_KEY).toBeUndefined()
+  })
+})
+
+describe('CLI entry point - cold start end-to-end (Refs #284)', () => {
+  const { spawnSync } = require('child_process')
+  const path = require('path')
+
+  test('reproduces the real bug: running index.js directly with no credentials in env must not crash before producing MCP-usable output', () => {
+    // This spawns the actual file exactly like `npx ainative-zerodb-mcp-server`
+    // would, with a clean env (no ZERODB_* vars), and lets the real network
+    // call happen (no mocking — this is the literal repro of the ora.ai
+    // scanner's cold-start failure). We give it a few seconds to either:
+    //   (a) auto-provision and print its startup banner to stderr, or
+    //   (b) fail and print the real reason.
+    // Before the fix: this process throws an uncaught "SECURITY ERROR" and
+    // exits non-zero with NO startup banner at all, before the MCP stdio
+    // transport ever connects.
+    const result = spawnSync(process.execPath, [path.join(__dirname, '..', 'index.js')], {
+      env: {
+        PATH: process.env.PATH,
+        HOME: process.env.HOME
+      },
+      input: '',
+      timeout: 15000,
+      encoding: 'utf-8'
+    })
+
+    // The old, buggy behavior was an uncaught throw with this exact message
+    // and no startup banner. After the fix, this string must never appear
+    // bare like this on cold start — either auto-provisioning succeeds and
+    // the server starts, or it fails with the credentials still-missing
+    // message AFTER an explicit, caught attempt (not an uncaught exception
+    // with a bare Node stack trace).
+    expect(result.stderr).not.toMatch(/\n\s*\^\n\nError: SECURITY ERROR/)
+  }, 20000)
 })
