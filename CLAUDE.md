@@ -11,6 +11,11 @@ events, PostgreSQL, embeddings, and RLHF. Published as
 - `__tests__/` — Jest test suites
 - `package.json` — package config, scripts, and inline jest config
 - `.github/ISSUE_TEMPLATE/` — bug report / feature request templates
+- `docs/` — changelog, migration guides, and release notes. Root stays
+  limited to README.md, CLAUDE.md, LICENSE, CODE_OF_CONDUCT.md,
+  SECURITY.md, and SUPPORT.md — files GitHub gives special root-level UI
+  treatment (community profile, Security tab, Get Help sidebar link).
+  Everything else belongs under `docs/`.
 
 ## Critical Rules
 

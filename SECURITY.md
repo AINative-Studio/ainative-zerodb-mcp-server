@@ -206,7 +206,7 @@ Subscribe to security updates:
 ## Additional Resources
 
 - [README.md](./README.md) - General documentation
-- [CHANGELOG.md](./CHANGELOG.md) - Version history and security fixes
+- [CHANGELOG.md](./docs/changelog/CHANGELOG.md) - Version history and security fixes
 - [GitHub Issues](https://github.com/AINative-Studio/ainative-zerodb-mcp-server/issues) - Bug reports
 - [AINative Documentation](https://docs.ainative.studio) - Full platform documentation
 

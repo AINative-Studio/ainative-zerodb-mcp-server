@@ -113,8 +113,8 @@
     "README.md",
     "LICENSE",
     "SECURITY.md",
-    "CHANGELOG.md",
-    "MIGRATION.md"
+    "docs/changelog/CHANGELOG.md",
+    "docs/migrations/v1-to-v2-tool-naming.md"
   ],
   "publishConfig": {
     "access": "public",
