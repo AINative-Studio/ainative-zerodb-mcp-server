@@ -1,0 +1,14 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "ainative-zerodb-mcp-server",
+  "version": "2.5.2",
+  "description": "AINative ZeroDB MCP Server — 93 operations for vector search, NoSQL, dedicated PostgreSQL, files, events, RLHF, knowledge graph, and persistent memory for AI agents.",
+  "author": {
+    "name": "AINative Studio",
+    "url": "https://ainative.studio"
+  },
+  "homepage": "https://ainative.studio/products/zerodb",
+  "repository": "https://github.com/AINative-Studio/ainative-zerodb-mcp-server",
+  "license": "MIT",
+  "keywords": ["mcp", "vector-search", "zerodb", "knowledge-graph", "agent-memory"]
+}
