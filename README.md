@@ -20,7 +20,7 @@
 
 ## Key Features
 
-- **70+ Complete Operations** - Full API coverage across all ZeroDB capabilities including embedding tools
+- **97 Complete Operations** - Full API coverage across all ZeroDB capabilities including embedding tools
 - **Vector Search** - Semantic similarity search with 384/768/1024/1536-dimensional embeddings
 - **Free Embeddings** - Generate embeddings with BAAI BGE models (no OpenAI costs!)
 - **Quantum Compression** - Advanced vector compression using quantum algorithms
