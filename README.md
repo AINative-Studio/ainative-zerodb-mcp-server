@@ -1,4 +1,4 @@
-# ZeroDB MCP Server v2.3.2
+# ZeroDB MCP Server v2.5.2
 
 [![npm version](https://img.shields.io/npm/v/ainative-zerodb-mcp-server.svg)](https://www.npmjs.com/package/ainative-zerodb-mcp-server)
 [![npm downloads](https://img.shields.io/npm/dm/ainative-zerodb-mcp-server.svg)](https://www.npmjs.com/package/ainative-zerodb-mcp-server)
@@ -7,16 +7,7 @@
 
 **Enterprise-grade Model Context Protocol (MCP) server providing full access to ZeroDB's vector search, quantum compression, PostgreSQL, NoSQL operations, and persistent memory for AI agents.**
 
-## What's New in v2.3.2
-
-- **Auth endpoint fix** — login uses `/v1/auth/login` with `email` field (was broken in v2.2.0)
-- **Execute endpoint fix** — all MCP operations route through `/v1/public/mcp` (was dead endpoint)
-- **PostgreSQL endpoint fix** — all 7 postgres management paths corrected
-- **Test env isolation fix** — 151/151 tests passing with proper env var cleanup
-- **3 Embedding Tools** (from v2.2.0) — `zerodb_generate_embeddings`, `zerodb_embed_and_store`, `zerodb_semantic_search`
-- **Multi-Dimension Support** — 384, 768, 1024, or 1536 dimension vectors
-- **Free Models** — BAAI/bge-small/base/large-en-v1.5 (no API costs)
-- **See [EMBEDDING_TOOLS_GUIDE.md](./EMBEDDING_TOOLS_GUIDE.md) for complete documentation**
+See [docs/changelog/CHANGELOG.md](./docs/changelog/CHANGELOG.md) for the full, up-to-date version history.
 
 ## Key Features
 
@@ -57,6 +48,7 @@
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 - [License](#license)
+- [Changelog](#changelog)
 
 ---
 
@@ -203,7 +195,9 @@ Claude will use the `zerodb_store_memory` tool to persist this information.
 
 ## API Reference
 
-All 60 operations are organized into 9 categories. Each operation is exposed as an MCP tool that Claude can invoke.
+The 71 operations below are organized into 10 categories. Each operation is exposed as an MCP tool that Claude can invoke.
+
+> **Note:** this server currently exposes 97 tools in total. The 26 newer Knowledge Graph tools (`zerodb_graph_*`) aren't documented below yet — see [docs/changelog/CHANGELOG.md](./docs/changelog/CHANGELOG.md)'s Unreleased section or `index.js` for the current list while that documentation is written.
 
 ### Memory Operations
 
@@ -2577,155 +2571,8 @@ try {
 
 ## Migration Guide
 
-### Migrating from Password Auth to API Key Auth
-
-> **Password auth (`ZERODB_USERNAME`/`ZERODB_PASSWORD`) is deprecated and will be removed in v3.0.**
-> The server will print a deprecation warning on startup if password auth is detected.
-
-#### Step 1: Get Your API Key
-
-1. Go to **https://ainative.studio/settings**
-2. Navigate to the **API Keys** section
-3. Click **Create API Key**
-4. Copy the key (it starts with `zdb_`)
-
-#### Step 2: Update Your Configuration
-
-**Old config (deprecated):**
-```json
-{
-  "mcpServers": {
-    "zerodb": {
-      "command": "npx",
-      "args": ["ainative-zerodb-mcp-server"],
-      "env": {
-        "ZERODB_API_URL": "https://api.ainative.studio",
-        "ZERODB_PROJECT_ID": "your-project-id",
-        "ZERODB_USERNAME": "your-email@example.com",
-        "ZERODB_PASSWORD": "YourPassword123!"
-      }
-    }
-  }
-}
-```
-
-**New config (recommended):**
-```json
-{
-  "mcpServers": {
-    "zerodb": {
-      "command": "npx",
-      "args": ["ainative-zerodb-mcp-server"],
-      "env": {
-        "ZERODB_API_URL": "https://api.ainative.studio",
-        "ZERODB_PROJECT_ID": "your-project-id",
-        "ZERODB_API_KEY": "zdb_your-api-key-here"
-      }
-    }
-  }
-}
-```
-
-#### Why Switch?
-
-- **No plaintext passwords** — API keys don't require storing your account password
-- **No token renewal** — API keys are used directly as Bearer tokens, no login/refresh flow
-- **Revocable** — Rotate or revoke individual keys without changing your password
-- **Scoped** — Future support for project-scoped and read-only keys
-
----
-
-### Migrating from v1.x to v2.0.0
-
-#### Breaking Changes
-
-1. **API Endpoint Consolidation**
-   - **v1.x**: Direct API calls to various endpoints
-   - **v2.0**: All operations go through unified MCP execute endpoint
-
-   **Impact**: No code changes needed if using MCP tools
-
-2. **Tool Naming Convention**
-   - **v1.x**: Some tools lacked `zerodb_` prefix
-   - **v2.0**: All tools prefixed with `zerodb_`
-
-   **Migration**:
-   ```javascript
-   // Old (v1.x)
-   store_memory(...) → zerodb_store_memory(...)
-   search_memory(...) → zerodb_search_memory(...)
-
-   // New (v2.0)
-   zerodb_store_memory(...) // Consistent prefix
-   ```
-
-3. **Parameter Changes**
-   - **Memory operations**: `memory_metadata` → `metadata`
-   - **Vector operations**: `vector_metadata` → `metadata`
-
-   **Migration**:
-   ```javascript
-   // Old (v1.x)
-   {
-     content: "...",
-     memory_metadata: { key: "value" }
-   }
-
-   // New (v2.0)
-   {
-     content: "...",
-     metadata: { key: "value" }
-   }
-   ```
-
-4. **New Required Environment Variables**
-   - `ZERODB_PROJECT_ID` is now required (was optional in v1.x)
-
-   **Migration**: Add to your config:
-   ```json
-   {
-     "env": {
-       "ZERODB_PROJECT_ID": "your-project-id"
-     }
-   }
-   ```
-
-#### New Features Available
-
-1. **54 New Operations** - Full API coverage beyond memory and vector operations
-2. **Quantum Compression** - Reduce vector storage by up to 50%
-3. **NoSQL Tables** - Structured data storage and queries
-4. **File Management** - Upload and manage files
-5. **Event System** - Event-driven architecture support
-6. **RLHF Collection** - Built-in feedback collection for model training
-7. **Admin Tools** - System monitoring and optimization
-
-#### Migration Steps
-
-1. **Update Package**
-   ```bash
-   npm update ainative-zerodb-mcp-server
-   # or
-   npm install -g ainative-zerodb-mcp-server@2.0.0
-   ```
-
-2. **Update Configuration**
-   - Add `ZERODB_PROJECT_ID` to environment variables
-   - Update any custom tool names to include `zerodb_` prefix
-
-3. **Test Existing Functionality**
-   - All v1.x operations remain compatible
-   - Test memory and vector operations still work
-
-4. **Gradually Adopt New Features**
-   - Start with new features that provide immediate value
-   - Refer to API Reference for new operation documentation
-
-#### Backward Compatibility
-
-- All v1.x operations are supported in v2.0
-- Existing data and projects are fully compatible
-- No data migration required
+- [Migrating from Password Auth to API Key Auth](./docs/migrations/password-to-api-key.md)
+- [Migrating from v1.x to v2.0.0](./docs/migrations/v1-to-v2-tool-naming.md)
 
 ---
 
@@ -2856,34 +2703,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Changelog
 
-### v2.0.0 (2025-10-14)
-
-**Breaking Changes**:
-- All operations now require `ZERODB_PROJECT_ID` environment variable
-- Unified API endpoint for all operations
-- Consistent `zerodb_` prefix for all tool names
-
-**New Features**:
-- Added 54 new operations (total 60)
-- Quantum vector compression and optimization
-- NoSQL table operations
-- File storage and management
-- Event-driven architecture support
-- RLHF feedback collection
-- Admin system monitoring and optimization
-- 90%+ test coverage
-- Automatic token renewal
-
-**Improvements**:
-- Better error handling and messages
-- Improved documentation
-- Enhanced security
-- Performance optimizations
-
-### v1.0.7 (2025-10-01)
-- Initial public release
-- Basic memory and vector operations
-- Claude Desktop integration
+See [docs/changelog/CHANGELOG.md](./docs/changelog/CHANGELOG.md) for the full version history.
 
 ---
 
