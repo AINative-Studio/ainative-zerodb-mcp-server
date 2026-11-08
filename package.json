@@ -87,22 +87,22 @@
     "npm": ">=9.0.0"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.24.0",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "ainative-design-system-mcp-server": "^1.0.1",
     "ainative-zerodb-mcp-server": "^2.2.0",
-    "axios": "^1.7.7",
-    "uuid": "^11.0.3"
+    "axios": "1.21.0",
+    "uuid": "11.1.1"
   },
   "devDependencies": {
-    "@types/jest": "^30.0.0",
-    "@types/node": "^22.10.1",
-    "eslint": "^8.57.1",
-    "eslint-config-standard": "^17.1.0",
-    "eslint-plugin-import": "^2.31.0",
-    "eslint-plugin-node": "^11.1.0",
-    "eslint-plugin-promise": "^6.6.0",
-    "jest": "^30.5.2",
-    "nock": "^13.5.6"
+    "@types/jest": "30.0.0",
+    "@types/node": "22.20.5",
+    "eslint": "8.57.1",
+    "eslint-config-standard": "17.1.0",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-node": "11.1.0",
+    "eslint-plugin-promise": "6.6.0",
+    "jest": "30.5.2",
+    "nock": "13.5.6"
   },
   "overrides": {
     "glob": "^14.0.3",
