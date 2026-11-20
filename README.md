@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/ainative-zerodb-mcp-server.svg)](https://www.npmjs.com/package/ainative-zerodb-mcp-server)
 [![npm downloads](https://img.shields.io/npm/dm/ainative-zerodb-mcp-server.svg)](https://www.npmjs.com/package/ainative-zerodb-mcp-server)
 [![license](https://img.shields.io/npm/l/ainative-zerodb-mcp-server.svg)](https://github.com/AINative-Studio/ainative-zerodb-mcp-server/blob/main/LICENSE)
-[![test coverage](https://img.shields.io/badge/coverage-81%25-brightgreen.svg)](https://github.com/AINative-Studio/ainative-zerodb-mcp-server)
+[![test coverage](https://img.shields.io/badge/coverage-98%25-brightgreen.svg)](https://github.com/AINative-Studio/ainative-zerodb-mcp-server)
 [![MCP Marketplace](https://img.shields.io/badge/MCP%20Marketplace-Indexed-blueviolet)](https://getlulu.dev/mcps)
 
 **Enterprise-grade Model Context Protocol (MCP) server providing full access to ZeroDB's vector search, quantum compression, PostgreSQL, NoSQL operations, and persistent memory for AI agents.**
@@ -33,8 +33,9 @@ See [docs/changelog/CHANGELOG.md](./docs/changelog/CHANGELOG.md) for the full, u
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [API Reference](#api-reference)
+  - [Embedding Operations (2)](#embedding-operations)
   - [Memory Operations (3)](#memory-operations)
-  - [Vector Operations (10)](#vector-operations)
+  - [Vector Operations (11)](#vector-operations)
   - [Quantum Operations (6)](#quantum-operations)
   - [Table/NoSQL Operations (8)](#tablenos-ql-operations)
   - [File Operations (6)](#file-operations)
@@ -43,6 +44,10 @@ See [docs/changelog/CHANGELOG.md](./docs/changelog/CHANGELOG.md) for the full, u
   - [RLHF Operations (10)](#rlhf-operations)
   - [Admin Operations (5)](#admin-operations)
   - [PostgreSQL Operations (6)](#postgresql-operations)
+  - [Dedicated PostgreSQL Management (7)](#dedicated-postgresql-management)
+  - [Knowledge Graph Operations (16)](#knowledge-graph-operations)
+  - [Lakehouse Operations (4)](#lakehouse-operations)
+  - [Utility Operations (1)](#utility-operations)
 - [Configuration](#configuration)
 - [Examples](#examples)
 - [Migration Guide](#migration-guide)
@@ -196,9 +201,27 @@ Claude will use the `zerodb_store_memory` tool to persist this information.
 
 ## API Reference
 
-The 71 operations below are organized into 10 categories. Each operation is exposed as an MCP tool that Claude can invoke.
+The 97 operations below are organized into 13 categories. Each operation is exposed as an MCP tool that Claude can invoke.
 
-> **Note:** this server currently exposes 97 tools in total. The 26 newer Knowledge Graph tools (`zerodb_graph_*`) aren't documented below yet — see [docs/changelog/CHANGELOG.md](./docs/changelog/CHANGELOG.md)'s Unreleased section or `index.js` for the current list while that documentation is written.
+### Embedding Operations
+
+#### `zerodb_generate_embeddings`
+Generate embeddings using a specified model (384/768/1024 dimensions), without persisting them. For embed + store in one step, use `zerodb_embed_and_store` instead.
+
+**Parameters:**
+- `texts` (array[string], required) - Text strings to generate embeddings for
+- `model` (string, optional) - One of `BAAI/bge-small-en-v1.5` (384-dim), `BAAI/bge-base-en-v1.5` (768-dim), `BAAI/bge-large-en-v1.5` (1024-dim) (default: `BAAI/bge-small-en-v1.5`)
+
+#### `zerodb_embed_and_store`
+Generate embeddings and store them in ZeroDB in one step -- combines `zerodb_generate_embeddings` + `zerodb_upsert_vector`. Auto-detects dimension based on model and routes to the correct storage.
+
+**Parameters:**
+- `texts` (array[string], required) - Text strings to embed and store
+- `model` (string, optional) - One of `BAAI/bge-small-en-v1.5`, `BAAI/bge-base-en-v1.5`, `BAAI/bge-large-en-v1.5` (default: `BAAI/bge-small-en-v1.5`)
+- `namespace` (string, optional) - Vector namespace for organization (default: `default`)
+- `metadata` (object, optional) - Metadata to attach to the stored vectors
+
+---
 
 ### Memory Operations
 
@@ -574,6 +597,26 @@ Export vectors to external format.
   "namespace": "windsurf",
   "format": "json",
   "include_embeddings": true
+}
+```
+
+#### `zerodb_semantic_search`
+Search vectors using a plain text query -- the query is auto-embedded server-side before the similarity search runs. Unlike `zerodb_search_vectors`, which requires a raw vector, this accepts text directly. Unlike `zerodb_search_memory`, which searches agent conversation memory, this searches the general vector store.
+
+**Parameters:**
+- `query_text` (string, required) - Text query to search for (auto-embedded)
+- `model` (string, optional) - Embedding model, must match the model used to store the target vectors. One of `BAAI/bge-small-en-v1.5`, `BAAI/bge-base-en-v1.5`, `BAAI/bge-large-en-v1.5` (default: `BAAI/bge-small-en-v1.5`)
+- `namespace` (string, optional) - Vector namespace to search in (default: `default`)
+- `limit` (number, optional) - Maximum results to return (default: 10)
+- `threshold` (number, optional) - Minimum similarity score, 0.0-1.0 (default: 0.7)
+- `filter_metadata` (object, optional) - Metadata filters for the search
+
+**Example:**
+```javascript
+{
+  "query_text": "how does vector search work",
+  "namespace": "docs",
+  "limit": 5
 }
 ```
 
@@ -2161,9 +2204,65 @@ Get comprehensive PostgreSQL database statistics including performance metrics.
 
 ---
 
+### Dedicated PostgreSQL Management
+
+Lifecycle and operational management for a dedicated PostgreSQL instance (provisioned via Railway), separate from the SQL-execution tools above.
+
+#### `zerodb_provision_postgres`
+Provision a dedicated PostgreSQL instance with dedicated resources. Choose instance size based on workload requirements and budget.
+
+**Parameters:**
+- `project_id` (string, required) - ZeroDB project ID
+- `instance_size` (string, optional) - One of `micro-1` ($5/mo), `standard-2` ($10/mo), `standard-4` ($25/mo), `performance-8` ($50/mo), `performance-16` ($100/mo) (default: `micro-1`)
+- `postgres_version` (string, optional) - `13`, `14`, or `15` (default: `15`)
+- `tags` (array[string], optional) - Tags for organization
+
+#### `zerodb_get_postgres_status`
+Get status and health metrics for the dedicated instance -- whether it's running, uptime, and health indicators.
+
+**Parameters:**
+- `project_id` (string, required) - ZeroDB project ID
+
+#### `zerodb_get_postgres_connection`
+Get connection credentials (`database_url`, host, port, etc.) for the dedicated instance.
+
+**Parameters:**
+- `project_id` (string, required) - ZeroDB project ID
+- `credential_type` (string, optional) - One of `primary`, `readonly`, `admin` (default: `primary`)
+
+#### `zerodb_get_postgres_usage`
+Get usage statistics and billing information -- compute usage, storage consumption, and cost breakdown.
+
+**Parameters:**
+- `project_id` (string, required) - ZeroDB project ID
+- `hours` (number, optional) - Time range in hours (default: 24)
+
+#### `zerodb_get_postgres_logs`
+Get SQL query logs with performance metrics and credit consumption, for auditing queries or debugging slow operations.
+
+**Parameters:**
+- `project_id` (string, required) - ZeroDB project ID
+- `limit` (number, optional) - Maximum log entries to return (default: 100)
+- `query_type` (string, optional) - Filter by query type: `SELECT`, `INSERT`, `UPDATE`, or `DELETE`
+
+#### `zerodb_restart_postgres`
+Restart the dedicated instance (completes in 30-60 seconds). Does not lose data.
+
+**Parameters:**
+- `project_id` (string, required) - ZeroDB project ID
+
+#### `zerodb_delete_postgres`
+Delete the instance and all its data. WARNING: irreversible.
+
+**Parameters:**
+- `project_id` (string, required) - ZeroDB project ID
+- `confirm` (boolean, required) - Must be `true` to confirm deletion and data loss
+
+---
+
 ### Knowledge Graph Operations
 
-Entity/relationship graph on top of your ZeroDB memories — create entities, link them, walk the graph, and run hybrid vector+graph search. Requires a core backend version that includes the `graph_*` MCP operations (AINative-Studio/core#8341); an older backend returns an "operation not recognized" error for these four tools.
+Entity/relationship graph on top of your ZeroDB memories — create entities, link them, walk the graph, run hybrid vector+graph search, manage ontologies, and resolve contradictions. Requires a core backend version that includes the `graph_*` MCP operations (AINative-Studio/core#8341, #8432); an older backend returns an "operation not recognized" error for these tools.
 
 #### `zerodb_graph_upsert_entity`
 Create or update a knowledge graph entity. If an entity with the same `canonical_name` + `entity_type` already exists, its aliases are merged and `memory_count` is incremented instead of creating a duplicate.
@@ -2326,6 +2425,46 @@ Export the knowledge graph as JSON (nodes + edges, D3/Cytoscape-compatible). For
 - `entity_type` (string, optional) - Filter by entity type
 - `limit` (number, optional) - Max entities to export, default: 5000
 - `min_confidence` (number, optional) - Minimum edge confidence to include, default: 0.0
+
+---
+
+### Lakehouse Operations
+
+Read-only SQL analytics (via DuckDB over Parquet in object storage) against data ingested into the project lakehouse, plus discovery across the public, platform-wide data catalog.
+
+#### `zerodb_lakehouse_query`
+Execute a read-only (`SELECT`/`WITH` only) SQL query against the project lakehouse. Destructive SQL (`INSERT`/`UPDATE`/`DELETE`/`DROP`/etc.) is rejected.
+
+**Parameters:**
+- `project_id` (string, required) - ZeroDB project ID
+- `sql` (string, required) - SQL query (`SELECT` or `WITH` only)
+- `max_rows` (number, optional) - Maximum rows to return (default: 1000)
+
+#### `zerodb_lakehouse_list_tables`
+List the lakehouse tables (sensor-type partitions) available for a project, with file counts, total bytes, and last-modified time. Use to discover what data exists before querying it.
+
+**Parameters:**
+- `project_id` (string, required) - ZeroDB project ID
+
+#### `zerodb_lakehouse_catalog_list`
+List all partitions in the public lakehouse data catalog, with file counts and sizes -- a platform-wide overview independent of any single project. No `project_id` required.
+
+**Parameters:** none
+
+#### `zerodb_lakehouse_catalog_search`
+Search the public lakehouse data catalog by partition name, e.g. to find which partitions match a keyword like "weather" or "ais" before querying them.
+
+**Parameters:**
+- `q` (string, required) - Search term to match against partition names
+
+---
+
+### Utility Operations
+
+#### `zerodb_renew_token`
+Manually renew the authentication token. Use when the current token has expired or is about to expire and a refresh is needed before the next API call. The server already renews tokens automatically every 25 minutes for username/password auth (see [Authentication](#authentication)); this is for forcing an out-of-band refresh.
+
+**Parameters:** none
 
 ---
 

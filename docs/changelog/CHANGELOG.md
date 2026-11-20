@@ -5,15 +5,25 @@ All notable changes to the ZeroDB MCP Server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **`zerodb_update_rows` mislabeled `destructiveHint: false` (Refs #69)**: reported via a private security disclosure -- this tool accepts an unbounded MongoDB-style `filter`/`update` and can overwrite every matching row in a table (irreversible), but was labeled `destructiveHint: false, readOnlyHint: false`, the exact combination some MCP clients (Codex CLI, VS Code/Copilot, Goose Smart Approve) treat as safe to auto-run without prompting the user. Changed to `destructiveHint: true`, matching the sibling `zerodb_delete_rows` tool, and added a warning to the tool description as defense-in-depth.
+
+## [2.5.2] - 2026-11-07
+
+### Added
+- **MCP Registry listing (`mcpName` field)**: required for listing on the official MCP Registry (registry.modelcontextprotocol.io) -- fixes zero discoverability for "zerodb mcp" search queries, previously dominated entirely by an unrelated company (Zerodha stock trading).
+
+### Note
+This version also carries the Knowledge Graph operations Phase 2 tools below, which were implemented before 2.5.2 but never got their own changelog entry (sat mislabeled under `[Unreleased]` after shipping).
+
+- **Knowledge Graph operations Phase 2 (12 new tools)**: `zerodb_graph_list_entities`, `zerodb_graph_neighbors`, `zerodb_graph_stats`, `zerodb_graph_merge_entities`, `zerodb_graph_ontology_get`, `zerodb_graph_ontology_upsert`, `zerodb_graph_ontology_infer`, `zerodb_graph_ontology_suggestions`, `zerodb_graph_contradictions_list`, `zerodb_graph_contradictions_resolve`, `zerodb_graph_centrality`, `zerodb_graph_export`. Follow-up to AINative-Studio/core#8412/#8341, which covered 4 of 29 context-graph routes. This PR covers ontology CRUD, contradiction detection/resolution, centrality ranking, graph export, and a handful of simple entity/stats operations — 16 of 29 routes now have MCP coverage. SPARQL, Vault-LD/RDF export-import-resolve-validate-materialize, DPROD descriptor, entity resolve, edge feedback, and connector health remain uncovered (AINative-Studio/core#8432). Requires a core backend running the corresponding `graph_*` operation handlers (AINative-Studio/core#8432) — calling these tools against an older backend returns an "operation not recognized" error.
+
 ## [2.5.1] - 2026-11-02
 
 ### Fixed
 - **Cold start with no credentials crashed before the MCP handshake instead of auto-provisioning (Refs AINative-Studio/ZeroDB.AINative.Studio#284)**: running `npx ainative-zerodb-mcp-server` (the exact `install` command advertised at `https://zerodb.ainative.studio/.well-known/mcp.json`) with no `ZERODB_API_KEY`/`ZERODB_USERNAME`+`ZERODB_PASSWORD` set threw an uncaught `SECURITY ERROR` synchronously in the `ZeroDBMCPServer` constructor, before the stdio MCP transport ever connected and before a single byte reached stdout. To any client — including ora.ai's AI-readiness scan agent, which hit this exactly and scored "can an agent use you reliably in production?" at 0/100 — this is indistinguishable from a dead/unreachable server. Added `autoProvisionCredentials()`, called once from the CLI entry point before constructing the server, which requests a free instant-db project/API key from `POST /api/v1/public/instant-db` (bounded by a 10s timeout to avoid the hang class fixed in the sibling package `ainative-zerodb-memory-mcp` PR #38) and only falls through to the existing honest error if that also fails. Mirrors the already-shipped, already-proven auto-provisioning fallback in `ainative-zerodb-memory-mcp@1.2.11`. `ZeroDBMCPServer`'s own synchronous "throw if no credentials" constructor contract is unchanged, so direct embedders/tests are unaffected.
-
-## [Unreleased]
-
-### Added
-- **Knowledge Graph operations Phase 2 (12 new tools)**: `zerodb_graph_list_entities`, `zerodb_graph_neighbors`, `zerodb_graph_stats`, `zerodb_graph_merge_entities`, `zerodb_graph_ontology_get`, `zerodb_graph_ontology_upsert`, `zerodb_graph_ontology_infer`, `zerodb_graph_ontology_suggestions`, `zerodb_graph_contradictions_list`, `zerodb_graph_contradictions_resolve`, `zerodb_graph_centrality`, `zerodb_graph_export`. Follow-up to AINative-Studio/core#8412/#8341, which covered 4 of 29 context-graph routes. This PR covers ontology CRUD, contradiction detection/resolution, centrality ranking, graph export, and a handful of simple entity/stats operations — 16 of 29 routes now have MCP coverage. SPARQL, Vault-LD/RDF export-import-resolve-validate-materialize, DPROD descriptor, entity resolve, edge feedback, and connector health remain uncovered (AINative-Studio/core#8432). Requires a core backend running the corresponding `graph_*` operation handlers (AINative-Studio/core#8432) — calling these tools against an older backend returns an "operation not recognized" error.
 
 ## [2.4.0] - 2026-10-03
 
