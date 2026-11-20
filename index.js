@@ -730,8 +730,8 @@ class ZeroDBMCPServer {
         },
         {
           name: 'zerodb_update_rows',
-          description: 'Update rows in a table. Use when modifying existing records in a NoSQL table. Supports MongoDB-style update operators ($set, $inc, etc.) and optional upsert behavior.',
-          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+          description: 'Update rows in a table. Use when modifying existing records in a NoSQL table. Supports MongoDB-style update operators ($set, $inc, etc.) and optional upsert behavior. WARNING: Can overwrite every row matching the filter; not reversible.',
+          annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
           inputSchema: {
             type: 'object',
             properties: {
