@@ -231,7 +231,7 @@ class ZeroDBMCPServer {
   }
 
   setupTools () {
-    // Define ALL 85 MCP tools for ZeroDB integration (+4 lakehouse Refs #8342, +4 knowledge graph Refs #8341)
+    // Define ALL 97 MCP tools for ZeroDB integration
     this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
       tools: [
         // ==================== EMBEDDING OPERATIONS (3) ====================
