@@ -4,6 +4,7 @@
 [![npm downloads](https://img.shields.io/npm/dm/ainative-zerodb-mcp-server.svg)](https://www.npmjs.com/package/ainative-zerodb-mcp-server)
 [![license](https://img.shields.io/npm/l/ainative-zerodb-mcp-server.svg)](https://github.com/AINative-Studio/ainative-zerodb-mcp-server/blob/main/LICENSE)
 [![test coverage](https://img.shields.io/badge/coverage-81%25-brightgreen.svg)](https://github.com/AINative-Studio/ainative-zerodb-mcp-server)
+[![MCP Marketplace](https://img.shields.io/badge/MCP%20Marketplace-Indexed-blueviolet)](https://getlulu.dev/mcps)
 
 **Enterprise-grade Model Context Protocol (MCP) server providing full access to ZeroDB's vector search, quantum compression, PostgreSQL, NoSQL operations, and persistent memory for AI agents.**
 
