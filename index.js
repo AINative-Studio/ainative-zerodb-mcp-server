@@ -231,7 +231,7 @@ class ZeroDBMCPServer {
   }
 
   setupTools () {
-    // Define ALL 97 MCP tools for ZeroDB integration
+    // Define ALL 100 MCP tools for ZeroDB integration
     this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
       tools: [
         // ==================== EMBEDDING OPERATIONS (3) ====================
@@ -1348,7 +1348,7 @@ class ZeroDBMCPServer {
           }
         },
 
-        // ==================== LAKEHOUSE OPERATIONS (4) ====================
+        // ==================== LAKEHOUSE OPERATIONS (7) ====================
         {
           name: 'zerodb_lakehouse_query',
           description: 'Execute a read-only (SELECT/WITH only) SQL query against the project lakehouse via DuckDB over Parquet files in object storage. Use when you need to analyze or inspect data that has been ingested into the lakehouse. Destructive SQL (INSERT/UPDATE/DELETE/DROP/etc.) is rejected.',
@@ -1366,6 +1366,46 @@ class ZeroDBMCPServer {
         {
           name: 'zerodb_lakehouse_list_tables',
           description: 'List the lakehouse tables (sensor-type partitions) available for a project, with file counts, total bytes, and last-modified time. Use when you need to discover what data exists in the lakehouse before querying it.',
+          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+          inputSchema: {
+            type: 'object',
+            properties: {
+              project_id: { type: 'string', description: 'ZeroDB project ID' }
+            },
+            required: ['project_id']
+          }
+        },
+        {
+          name: 'zerodb_lakehouse_ingest',
+          description: 'Write records into a project\'s lakehouse partition under a given sensor type (logical table). Use when you need to load data into the lakehouse for later querying.',
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+          inputSchema: {
+            type: 'object',
+            properties: {
+              project_id: { type: 'string', description: 'ZeroDB project ID' },
+              sensor_type: { type: 'string', description: 'Logical table / sensor type to write into (e.g. "ais")' },
+              records: { type: 'array', items: { type: 'object' }, description: 'Rows to write (1 or more)' }
+            },
+            required: ['project_id', 'sensor_type', 'records']
+          }
+        },
+        {
+          name: 'zerodb_lakehouse_delete',
+          description: 'Delete data from a project\'s lakehouse partition — either one sensor type/table, or (with confirm=true and sensor_type omitted) the whole project partition. Use with care: deletion is permanent.',
+          annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+          inputSchema: {
+            type: 'object',
+            properties: {
+              project_id: { type: 'string', description: 'ZeroDB project ID' },
+              sensor_type: { type: 'string', description: 'Sensor/table to delete. Omit + confirm=true to delete ALL project data.' },
+              confirm: { type: 'boolean', description: 'Required to delete the whole project partition when sensor_type is omitted.', default: false }
+            },
+            required: ['project_id']
+          }
+        },
+        {
+          name: 'zerodb_lakehouse_stats',
+          description: 'Get aggregate data-volume statistics (file count, total bytes, sensor type count) for a project\'s lakehouse partition. Use when you need to understand how much data a project has ingested.',
           annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
           inputSchema: {
             type: 'object',
@@ -1933,6 +1973,12 @@ class ZeroDBMCPServer {
         return await this.executeOperation('lakehouse_query', args)
       case 'zerodb_lakehouse_list_tables':
         return await this.executeOperation('lakehouse_list_tables', args)
+      case 'zerodb_lakehouse_ingest':
+        return await this.executeOperation('lakehouse_ingest', args)
+      case 'zerodb_lakehouse_delete':
+        return await this.executeOperation('lakehouse_delete', args)
+      case 'zerodb_lakehouse_stats':
+        return await this.executeOperation('lakehouse_stats', args)
       case 'zerodb_lakehouse_catalog_list':
         return await this.executeOperation('lakehouse_catalog_list', args)
       case 'zerodb_lakehouse_catalog_search':
@@ -2454,7 +2500,7 @@ class ZeroDBMCPServer {
       console.error('ZeroDB MCP Server v2.3.5 running on stdio')
       console.error(`API URL: ${this.apiUrl}`)
       console.error(`Project ID: ${this.projectId}`)
-      console.error('Operations: 77 (includes 7 dedicated PostgreSQL management tools, all annotated with MCP hints)')
+      console.error('Operations: 100 (includes 7 dedicated PostgreSQL management tools and 7 lakehouse tools, all annotated with MCP hints)')
       if (this.useStaticToken) {
         console.error('\u2705 Auth: API key (recommended)')
       } else {

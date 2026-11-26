@@ -1,6 +1,6 @@
 # ZeroDB MCP Server
 
-Full MCP server with 97 tools for vectors, memory, NoSQL tables, files,
+Full MCP server with 100 tools for vectors, memory, NoSQL tables, files,
 events, PostgreSQL, embeddings, and RLHF. Published as
 `ainative-zerodb-mcp-server` on npm.
 

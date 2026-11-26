@@ -926,6 +926,9 @@ describe('ZeroDBMCPServer - Tool Routing', () => {
     { name: 'zerodb_graph_export', operation: 'graph_export' },
     { name: 'zerodb_lakehouse_query', operation: 'lakehouse_query' },
     { name: 'zerodb_lakehouse_list_tables', operation: 'lakehouse_list_tables' },
+    { name: 'zerodb_lakehouse_ingest', operation: 'lakehouse_ingest' },
+    { name: 'zerodb_lakehouse_delete', operation: 'lakehouse_delete' },
+    { name: 'zerodb_lakehouse_stats', operation: 'lakehouse_stats' },
     { name: 'zerodb_lakehouse_catalog_list', operation: 'lakehouse_catalog_list' },
     { name: 'zerodb_lakehouse_catalog_search', operation: 'lakehouse_catalog_search' }
   ]

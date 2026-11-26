@@ -14,7 +14,7 @@ See [docs/changelog/CHANGELOG.md](./docs/changelog/CHANGELOG.md) for the full, u
 
 ## Key Features
 
-- **97 Complete Operations** - Full API coverage across all ZeroDB capabilities including embedding tools
+- **100 Complete Operations** - Full API coverage across all ZeroDB capabilities including embedding tools
 - **Vector Search** - Semantic similarity search with 384/768/1024/1536-dimensional embeddings
 - **Free Embeddings** - Generate embeddings with BAAI BGE models (no OpenAI costs!)
 - **Quantum Compression** - Advanced vector compression using quantum algorithms
@@ -203,7 +203,7 @@ Claude will use the `zerodb_store_memory` tool to persist this information.
 
 ## API Reference
 
-The 97 operations below are organized into 13 categories. Each operation is exposed as an MCP tool that Claude can invoke.
+The 100 operations below are organized by category. Each operation is exposed as an MCP tool that Claude can invoke.
 
 ### Embedding Operations
 
@@ -2432,7 +2432,7 @@ Export the knowledge graph as JSON (nodes + edges, D3/Cytoscape-compatible). For
 
 ### Lakehouse Operations
 
-Read-only SQL analytics (via DuckDB over Parquet in object storage) against data ingested into the project lakehouse, plus discovery across the public, platform-wide data catalog.
+Ingest, query, and manage data in the project lakehouse (via DuckDB over Parquet in object storage), plus discovery across the public, platform-wide data catalog.
 
 #### `zerodb_lakehouse_query`
 Execute a read-only (`SELECT`/`WITH` only) SQL query against the project lakehouse. Destructive SQL (`INSERT`/`UPDATE`/`DELETE`/`DROP`/etc.) is rejected.
@@ -2444,6 +2444,28 @@ Execute a read-only (`SELECT`/`WITH` only) SQL query against the project lakehou
 
 #### `zerodb_lakehouse_list_tables`
 List the lakehouse tables (sensor-type partitions) available for a project, with file counts, total bytes, and last-modified time. Use to discover what data exists before querying it.
+
+**Parameters:**
+- `project_id` (string, required) - ZeroDB project ID
+
+#### `zerodb_lakehouse_ingest`
+Write records into a project's lakehouse partition under a given sensor type (logical table).
+
+**Parameters:**
+- `project_id` (string, required) - ZeroDB project ID
+- `sensor_type` (string, required) - Logical table / sensor type to write into (e.g. `ais`)
+- `records` (array[object], required) - Rows to write (1 or more)
+
+#### `zerodb_lakehouse_delete`
+Delete data from a project's lakehouse partition -- either one sensor type/table, or (with `confirm=true` and `sensor_type` omitted) the whole project partition. Deletion is permanent.
+
+**Parameters:**
+- `project_id` (string, required) - ZeroDB project ID
+- `sensor_type` (string, optional) - Sensor/table to delete. Omit + `confirm=true` to delete ALL project data.
+- `confirm` (boolean, optional) - Required to delete the whole project partition when `sensor_type` is omitted (default: `false`)
+
+#### `zerodb_lakehouse_stats`
+Get aggregate data-volume statistics (file count, total bytes, sensor type count) for a project's lakehouse partition.
 
 **Parameters:**
 - `project_id` (string, required) - ZeroDB project ID
