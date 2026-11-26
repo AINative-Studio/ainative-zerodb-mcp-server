@@ -1,5 +1,7 @@
 # ZeroDB MCP Server v2.5.2
 
+> **Note:** the published npm package is the source of truth for the current version and tool count. This checkout's `package.json` may lag behind what's live — run `npm view ainative-zerodb-mcp-server version` to confirm before relying on the version number in this file.
+
 [![npm version](https://img.shields.io/npm/v/ainative-zerodb-mcp-server.svg)](https://www.npmjs.com/package/ainative-zerodb-mcp-server)
 [![npm downloads](https://img.shields.io/npm/dm/ainative-zerodb-mcp-server.svg)](https://www.npmjs.com/package/ainative-zerodb-mcp-server)
 [![license](https://img.shields.io/npm/l/ainative-zerodb-mcp-server.svg)](https://github.com/AINative-Studio/ainative-zerodb-mcp-server/blob/main/LICENSE)
